@@ -1,0 +1,5 @@
+
+# Local CLI installation and authentication caches must never be committed.
+node_modules/
+.tmg-cli/
+.tma-cli/

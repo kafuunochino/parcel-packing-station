@@ -14,7 +14,9 @@ export function shapeKey(cells) { return JSON.stringify(normalizeShape(cells)); 
 export function getPiece(level, id) { return level.pieces.find(p => p.id === id); }
 export function getShape(piece, form = {}) { return rotateShape(form.compressed && piece.soft ? piece.compressedShape : piece.shape, form.rotation || 0); }
 export function createState(level) {
-  return { levelId: level.id, placements: {}, forms: Object.fromEntries(level.pieces.map(p => [p.id, {rotation: 0, compressed: !!p.startCompressed}])), history: [], moves: 0 };
+  const forms={};
+  level.pieces.forEach(p=>{forms[p.id]={rotation:0,compressed:!!p.startCompressed};});
+  return { levelId: level.id, placements: {}, forms, history: [], moves: 0 };
 }
 export function occupiedCells(level, state, exceptId = null) {
   const occupied = new Map();
@@ -38,14 +40,15 @@ export function canPlace(level,state,id,x,y,form = state.forms[id]) {
   }
   return {ok:true,reason:''};
 }
-const snapshot = state => ({levelId:state.levelId, placements:Object.fromEntries(Object.entries(state.placements).map(([id,at])=>[id,{...at}])), forms:Object.fromEntries(Object.entries(state.forms).map(([id,form])=>[id,{...form}])), moves:state.moves});
+function copyRecords(records) { const copy={};Object.keys(records).forEach(id=>{copy[id]={...records[id]};});return copy; }
+const snapshot = state => ({levelId:state.levelId, placements:copyRecords(state.placements), forms:copyRecords(state.forms), moves:state.moves});
 function commit(state,next) { return {...next,history:[...state.history,snapshot(state)].slice(-100),moves:state.moves+1}; }
 export function applyAction(level,state,action) {
   const fail = reason => ({ok:false,state,reason});
   if (!action || !action.type) return fail('未知操作');
   if (action.type === 'undo') {
     if(!state.history.length) return fail('还没有可以撤回的操作');
-    return {ok:true,state:{...state.history.at(-1),history:state.history.slice(0,-1)},reason:''};
+    return {ok:true,state:{...state.history[state.history.length-1],history:state.history.slice(0,-1)},reason:''};
   }
   if(action.type === 'reset') return {ok:true,state:createState(level),reason:''};
   const piece=getPiece(level,action.pieceId);
@@ -54,7 +57,7 @@ export function applyAction(level,state,action) {
   if(action.type==='place') {
     const check=canPlace(level,state,id,action.x,action.y);
     if(!check.ok) return fail(check.reason);
-    if(state.placements[id]?.x===action.x && state.placements[id]?.y===action.y) return fail('已经放在这里了');
+    if(state.placements[id] && state.placements[id].x===action.x && state.placements[id].y===action.y) return fail('已经放在这里了');
     next.placements[id]={x:action.x,y:action.y};
   } else if(action.type==='remove') {
     if(!state.placements[id]) return fail('这个包裹还没有装箱');

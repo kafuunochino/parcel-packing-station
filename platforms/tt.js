@@ -1,5 +1,7 @@
+import {createDouyinSidebar} from './douyin-sidebar.js';
 // No browser globals. tt and the frame scheduler are explicitly injected.
 export function createTTPlatform(api, scheduler, audioPaths = {}) {
+  const sidebar = createDouyinSidebar(api);
   const canvas = api.createCanvas(); // Exactly one on-screen canvas.
   const listeners = { pointer: new Set(), resize: new Set(), pause: new Set(), resume: new Set() };
   const removers = [];
@@ -10,9 +12,9 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
   let size;
   function resize() {
     const info = api.getSystemInfoSync();
-    const next = { width: info.windowWidth || info.screenWidth, height: info.windowHeight || info.screenHeight, dpr: Math.min(info.pixelRatio || 1, 3) };
+    const next = { width: info.windowWidth || info.screenWidth, height: info.windowHeight || info.screenHeight, dpr: Math.min(info.pixelRatio || 1, 3), safeTop: (Number(info.statusBarHeight) || 0) + 48, safeBottom: 12 };
     if (!(next.width > 0 && next.height > 0)) throw new Error('Platform viewport dimensions are missing');
-    if (size && next.width === size.width && next.height === size.height && next.dpr === size.dpr) return;
+    if (size && next.width === size.width && next.height === size.height && next.dpr === size.dpr && next.safeTop === size.safeTop) return;
     size = next;
     canvas.width = Math.round(size.width * size.dpr);
     canvas.height = Math.round(size.height * size.dpr);
@@ -21,7 +23,7 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
   resize();
   for (const [suffix, type] of [['Start','down'],['Move','move'],['End','up'],['Cancel','cancel']]) {
     bind('onTouch' + suffix, 'offTouch' + suffix, event => {
-      const touches = event.changedTouches?.length ? event.changedTouches : event.touches || [];
+      const touches = (event.changedTouches && event.changedTouches.length) ? event.changedTouches : event.touches || [];
       touches.forEach(touch => emit('pointer', { type, x: touch.clientX, y: touch.clientY, id: touch.identifier }));
     });
   }
@@ -31,7 +33,7 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
   bind('onShow', 'offShow', () => { resize(); emit('resume'); });
   // The spike is portrait-only. Verify host resize behavior before landscape/tablet support.
   return {
-    canvas, getSize: () => ({ ...size }),
+    canvas, sidebar, getSize: () => ({ ...size }),
     onPointer: subscribe('pointer'), onResize: subscribe('resize'), onPause: subscribe('pause'), onResume: subscribe('resume'),
     requestFrame: fn => scheduler.requestAnimationFrame(fn), cancelFrame: id => scheduler.cancelAnimationFrame(id),
     storage: {
@@ -43,12 +45,12 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
         if (muted || !audioPaths[name] || typeof api.createInnerAudioContext !== 'function') return;
         try {
           let sound = sounds.get(name);
-          if (!sound) { sound = api.createInnerAudioContext(); sound.src = audioPaths[name]; sound.onError?.(() => {}); sounds.set(name, sound); }
+          if (!sound) { sound = api.createInnerAudioContext(); sound.src = audioPaths[name]; if(typeof sound.onError==='function')sound.onError(() => {}); sounds.set(name, sound); }
           sound.seek(0); sound.play();
-        } catch { /* Audio failure must not block play. */ }
+        } catch (_error) { /* Audio failure must not block play. */ }
       },
       setMuted(value) { muted = Boolean(value); if (muted) stopAudio(); }
     },
-    destroy() { removers.forEach(fn => fn()); sounds.forEach(sound => sound.destroy()); Object.values(listeners).forEach(set => set.clear()); }
+    destroy() { sidebar.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => sound.destroy()); Object.values(listeners).forEach(set => set.clear()); }
   };
 }

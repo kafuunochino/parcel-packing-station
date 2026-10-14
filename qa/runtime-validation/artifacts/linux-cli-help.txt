@@ -1,0 +1,83 @@
+
+### tmg --version
+2.1.1
+EXIT=0
+
+### tmg --help
+Usage: tmg [options] [command]
+
+Options:
+  -V, --version                         Output the current version
+  -h, --help                            display help for command
+
+Commands:
+  open [options] <project-path>         Open target project by path
+  login [options]                       Login to the developer platform
+  login-e [options] [email] [password]  Login to the developer platform by
+                                        E-mail
+  logout                                Logout and clear the session.
+  preview [options] [entry]             Preview project by remote
+  upload [options] [entry]              Upload project to the developer
+                                        platform
+  build-npm [projectPath]               build npm packages in node_modules
+  version [entry]                       Get latest released version of
+                                        project
+  set-config [options]                  Set tt-minigame-ide-cli config
+  help [command]                        display help for command
+EXIT=0
+
+### tmg login --help
+Usage: tmg login [options]
+
+Login to the developer platform
+
+Options:
+  -m, --mobile         Login by mobile
+  -e, --email          Login by email
+  -p, --proxy <proxy>  Login with proxy
+  -h, --help           display help for command
+EXIT=0
+
+### tmg preview --help
+Usage: tmg preview [options] [entry]
+
+Preview project by remote
+
+Options:
+  -f, --force                          Preview project without local
+                                       cache(deprecated)
+  --disable-cache                      Preview project without local cache
+  -s, --small                          Use small QR Code, it may fail in some
+                                       environments
+  -u, --copy                           Copy remote url to clipboard
+  -p, --proxy <proxy>                  Preview with proxy
+  -o, --output <path>                  QRCode image output path
+  --minigame-query <query>             Minigame query
+  --minigame-scene <scene>             Minigame scene
+  --minigame-launch-from <launchFrom>  Minigame launchFrom
+  --minigame-location <location>       Minigame location
+  -n --android-use-native              Android uses Native rendering
+  -h, --help                           display help for command
+EXIT=0
+
+### tmg upload --help
+Usage: tmg upload [options] [entry]
+
+Upload project to the developer platform
+
+Options:
+  -v, --app-version <version>       App version (eg: [major].[minor].[patch])
+  -c, --app-changelog <log>         Changelog for this version
+  -p, --proxy <proxy>               Update request proxy
+  -u, --copy                        Copy remote url to clipboard
+  -s, --small                       Use small QR Code, it may fail in some
+                                    environments
+  -o, --output <path>               QRCode image output path
+  -b, --background-color <bgColor>  QRCode image output with custom background
+                                    color. Color value must be in hex format
+                                    (RGBA).For example, solid white color is
+                                    '#ffffffff'. (default: "#ffffff00")
+  --channel <channel>               Test Channel
+  -n --android-use-native           Android uses Native rendering
+  -h, --help                        display help for command
+EXIT=0

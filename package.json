@@ -3,10 +3,10 @@
   "version": "0.1.0-beta.1",
   "private": true,
   "type": "module",
-  "description": "软包挤挤站：原生 HTML/CSS/JS 装箱解谜测试版",
+  "description": "快递收纳站：Canvas2D 软包压缩装箱解谜 Demo",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node --test test/rules.test.js test/storage.test.js test/runtime.test.js test/browser-adapter.test.js test/build.test.js",
+    "test": "node --test test/rules.test.js test/storage.test.js test/runtime.test.js test/browser-adapter.test.js test/build.test.js test/sidebar.test.js",
     "verify": "node scripts/verify-levels.mjs",
     "build": "node scripts/build.mjs",
     "test:runtime-proof": "node qa/runtime-validation/scripts/build.mjs && node --test qa/runtime-validation/test/runtime.test.js"
