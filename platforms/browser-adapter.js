@@ -8,7 +8,9 @@ export function createBrowserPlatform(canvas, host = window, audioPaths = {}) {
   let size;
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    size = { width: rect.width, height: rect.height, dpr: Math.min(host.devicePixelRatio || 1, 3) };
+    const style = typeof host.getComputedStyle === 'function' ? host.getComputedStyle(host.document.documentElement) : null;
+    const inset = name => style ? Math.max(0, parseFloat(style.getPropertyValue('--safe-' + name)) || 0) : 0;
+    size = { width: rect.width, height: rect.height, dpr: Math.min(host.devicePixelRatio || 1, 3), safeTop: inset('top'), safeBottom: inset('bottom'), safeLeft: inset('left'), safeRight: inset('right') };
     canvas.width = Math.round(size.width * size.dpr);
     canvas.height = Math.round(size.height * size.dpr);
     emit('resize', { ...size });

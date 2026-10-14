@@ -1,6 +1,6 @@
 {
   "appid": "tt8a23fc9e145a412a02",
   "projectname": "快递收纳站",
-  "version": "0.1.0",
-  "description": "快递收纳站 Canvas Demo，软包压缩装箱解谜。候选测试构建，真实手机验证待完成。"
+  "version": "0.2.0",
+  "description": "快递收纳站：手机竖屏仓库工位UI候选，全部菜单与操作在Canvas内。官方编译、上传及真机验证另行进行。"
 }

@@ -1,78 +1,167 @@
 import {LEVELS,getLevel} from './levels.js';
 import {createState,applyAction,getShape,occupiedCells,canPlace,isWin,remainingCells} from './rules.js';
 import {loadSave,writeSave} from './storage.js';
-const C={ink:'#294338',muted:'#85917c',paper:'#f7f4ea',line:'#dfe4d5',mint:'#b5d9ba',gold:'#efd087',blue:'#a8c8e4',peach:'#edb19b',lavender:'#c8bddf',lime:'#d3d98e',teal:'#9dcfc7',sand:'#dbc59c',pink:'#eda8b9'};
-const FONT='"PingFang SC","Microsoft YaHei",sans-serif';
-/** Portable game entry. No DOM, window, localStorage or platform globals. */
+const C={ink:'#292c25',muted:'#aeb6a0',warehouse:'#30382f',beam:'#52604d',paper:'#fff2d1',kraft:'#c99554',edge:'#825b35',orange:'#f5b640',red:'#b95640',mint:'#99bf87',gold:'#edc15a',blue:'#85b9d2',peach:'#e49576',lavender:'#aa95c9',lime:'#c2ce75',teal:'#76b6aa',sand:'#d6b987',pink:'#e99ab8'};
+const FONT='"Noto Sans CJK SC","PingFang SC","Microsoft YaHei",sans-serif';
+/** The entire game, including menus, is painted inside one Canvas. */
 export function startGame(platform) {
  const ctx=platform.canvas.getContext('2d');
  if(!ctx)throw new Error('A Canvas2D context is required');
- const loaded=loadSave(platform.storage);let save=loaded.save,level=getLevel(save.levelId),state=save.state,selected=null,modal=null,targets=[],size=platform.getSize(),layout,drag=null,frame=null,paused=false,destroyed=false,toast='',toastUntil=0,flashUntil=0,flashPiece=null,inputReady=false;
+ const loaded=loadSave(platform.storage);
+ let save=loaded.save,level=getLevel(save.levelId),state=save.state,selected=null,screen='home',modal=null,trail=[],tutorialPage=0,trayPage=0;
+ let targets=[],size=platform.getSize(),layout=null,drag=null,frame=null,paused=false,destroyed=false,inputReady=false,toast='',toastUntil=0;
+ let saveOK=loaded.status!=='unavailable';
+ const disposers=[],sidebar=platform.sidebar||null;
+ let sidebarState=sidebar?sidebar.getState():{available:false,enteredFromSidebar:false,pending:false};
  platform.audio.setMuted(!save.sound);
  function persist(){save.levelId=level.id;save.state=state;saveOK=writeSave(platform.storage,save);}
- let saveOK=loaded.status!=='unavailable';
- const disposers=[];
- const sidebar=platform.sidebar||null;
- let sidebarState=sidebar?sidebar.getState():{available:false,enteredFromSidebar:false,pending:false};
- if(sidebar)disposers.push(sidebar.subscribe(next=>{const returned=!sidebarState.enteredFromSidebar&&next.enteredFromSidebar;sidebarState=next;inputReady=false;targets=[];if(returned)notify('已从侧边栏进入，继续装箱吧');requestDraw();}));
- function rrect(x,y,w,h,r=10,fill,stroke){r=Math.max(0,Math.min(r,w/2,h/2));ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
- function text(t,x,y,font=12,color=C.ink,weight=500,align='left'){ctx.font=`${weight} ${font}px ${FONT}`;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillStyle=color;ctx.fillText(String(t),x,y);}
- function wrap(t,x,y,maxWidth,font=11,color=C.muted,line=17,maxLines=4){let current='',lines=0;ctx.font=`500 ${font}px ${FONT}`;for(const ch of t){if(ctx.measureText(current+ch).width>maxWidth&&current){text(current,x,y+lines*line,font,color);current=ch;lines++;if(lines>=maxLines)return;}else current+=ch;}if(current&&lines<maxLines)text(current,x,y+lines*line,font,color);}
- function button(id,label,x,y,w,h,options={}){const disabled=!!options.disabled;ctx.globalAlpha=disabled ? .35 : 1;rrect(x,y,w,h,options.radius||9,options.fill||'#fffdf7',options.border||C.line);text(label,x+w/2,y+h/2+4,options.font||11,options.color||C.ink,650,'center');ctx.globalAlpha=1;targets.push({id,x,y,w,h,disabled,...options.data});}
- function notify(message){toast=message;toastUntil=Date.now()+2800;requestDraw();}
+ function invalidate(){inputReady=false;targets=[];requestDraw();}
  function requestDraw(){if(!destroyed&&!paused&&frame===null)frame=platform.requestFrame(draw);}
- function dimensions(){size=platform.getSize();const desktop=size.width>=850&&size.height>=560;const W=desktop?1100:390,H=desktop?760:800,top=Math.max(0,Math.min(size.safeTop||0,size.height/3)),bottom=Math.max(0,Math.min(size.safeBottom||0,size.height/4)),usableHeight=size.height-top-bottom,scale=Math.min(size.width/W,usableHeight/H);return {desktop,W,H,scale,ox:(size.width-W*scale)/2,oy:top+(usableHeight-H*scale)/2};}
- function logical(e){const l=layout||dimensions();return {x:(e.x-l.ox)/l.scale,y:(e.y-l.oy)/l.scale};}
- function shape(piece,form,x,y,cell=15,alpha=1){const cells=getShape(piece,form),w=Math.max(...cells.map(p=>p[0]))+1,h=Math.max(...cells.map(p=>p[1]))+1;ctx.globalAlpha=alpha;for(const [dx,dy] of cells){rrect(x+dx*cell,y+dy*cell,cell-2,cell-2,piece.soft?4:3,C[piece.color],'rgba(0,0,0,0.086)');if(piece.soft){ctx.save();if(typeof ctx.setLineDash==='function')ctx.setLineDash([2,2]);rrect(x+dx*cell+1,y+dy*cell+1,cell-4,cell-4,3,null,'#b56b83');ctx.restore();}}ctx.globalAlpha=1;return {w:w*cell,h:h*cell};}
- function draw(){frame=null;if(destroyed)return;layout=dimensions();const {desktop,W,H,scale,ox,oy}=layout,dpr=size.dpr||1;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.width,size.height);ctx.fillStyle=C.paper;ctx.fillRect(0,0,size.width,size.height);ctx.translate(ox,oy);ctx.scale(scale,scale);targets=[];
-  const pad=desktop?40:20;
-  rrect(pad,desktop?38:18,32,32,10,C.ink);text('▣',pad+16,desktop?61:41,25,'#efd087',700,'center');text('快递收纳站',pad+42,desktop?54:33,desktop?18:15,C.ink,800);text('PARCEL & PEACE',pad+43,desktop?69:47,7,C.muted,700);
-  if(sidebarState.available)button('sidebarInfo',sidebarState.enteredFromSidebar?'复访已确认':'侧边栏复访',W-pad-166,desktop?40:21,68,28,{font:9,fill:'#e8efdf'});
-  button('sound',save.sound?'♫ 开':'♫ 关',W-pad-90,desktop?40:21,44,28,{font:10});button('help','?',W-pad-36,desktop?40:21,30,28,{font:13});
-  text('今日营业中 · 不赶时间，慢慢装',pad,desktop?116:78,desktop?10:8,C.muted,650);text('挤一挤，刚刚好。',pad,desktop?166:107,desktop?44:29,C.ink,850);
-  button('levels',`第 ${String(level.id).padStart(2,'0')} / 10 箱 ↗`,W-pad-(desktop?180:115),desktop?119:75,desktop?180:115,desktop?47:33,{fill:'#edf1e4',font:desktop?17:11});
-  const my=desktop?198:121,mh=desktop?61:54;rrect(pad,my,W-pad*2,mh,10,'#eaf0e1','#dde4d1');text(level.title,pad+13,my+21,desktop?15:12,C.ink,750);wrap(level.hint,pad+13,my+39,W-pad*2-25,desktop?11:9,C.muted,13,desktop?1:2);
-  if(desktop){rrect(40,280,620,437,17,'#fffdf7',C.line);rrect(682,280,378,437,17,'#fffdf7',C.line);text('01  把心意装进箱子',62,307,13,C.ink,750);text('02  选一件，放进去',702,307,13,C.ink,750);text(`${save.completed.length} / 10 箱已完成`,1040,307,9,C.muted,500,'right');}
-  const stats=desktop?{x:80,y:334,w:530}:{x:32,y:202,w:326};for(const [i,entry] of [['装入包裹',`${Object.keys(state.placements).length}/${level.pieces.length}`],['剩余空格',remainingCells(level,state)],['操作步数',state.moves]].entries()){const x=stats.x+i*stats.w/3;text(entry[0],x,stats.y,9,C.muted);text(entry[1],x+60,stats.y+1,16,C.ink,750);}
-  const area=desktop?{x:94,y:351,w:512,h:296}:{x:30,y:218,w:330,h:287};const cell=Math.min((area.w-52)/level.width,(area.h-48)/level.height),bw=cell*level.width,bh=cell*level.height,bx=area.x+(area.w-bw)/2,by=area.y+(area.h-bh)/2;
-  layout.board={x:bx,y:by,w:bw,h:bh,cell};rrect(bx-15,by-25,bw+30,bh+52,8,'#c7a475');rrect(bx-15,by-29,bw+30,bh+52,8,'#e5c896','#d1b07d');text('♥ 装下每一份心意',bx-2,by-11,8,'#967647');text(`BOX ${String(level.id).padStart(3,'0')}`,bx+bw+1,by-11,7,'#967647',600,'right');text('▥▥▥▥',bx,by+bh+17,13,'#a68a60');text('THIS SIDE UP ↑↑',bx+bw,by+bh+17,7,'#a68a60',600,'right');rrect(bx-3,by-3,bw+6,bh+6,4,'#c0a276');
-  const occupied=occupiedCells(level,state),blocked=new Set(level.blocked.map(c=>c.join(',')));let preview=null;if((drag && drag.moved)&&selected){const p=boardPoint(drag.current,drag.anchor);if(p)preview={...p,...canPlace(level,state,selected,p.x,p.y)};}
-  let previewCells=new Set();if(preview){const p=level.pieces.find(p=>p.id===selected);previewCells=new Set(getShape(p,state.forms[selected]).map(([x,y])=>`${x+preview.x},${y+preview.y}`));}
-  for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){const key=`${x},${y}`,id=occupied.get(key),piece=level.pieces.find(p=>p.id===id),px=bx+x*cell+1.5,py=by+y*cell+1.5,edge=cell-3;rrect(px,py,edge,edge,5,piece?C[piece.color]:blocked.has(key)?'#c9b38d':'#f4e8ce',piece?'rgba(0,0,0,0.086)':'#e2d0ad');if(blocked.has(key)){ctx.save();ctx.beginPath();ctx.rect(px,py,edge,edge);ctx.clip();ctx.strokeStyle='#b69d74';ctx.lineWidth=3;for(let a=-edge;a<edge*2;a+=11){ctx.beginPath();ctx.moveTo(px+a,py);ctx.lineTo(px+a+edge,py+edge);ctx.stroke();}ctx.restore();text('×',px+edge/2,py+edge/2+5,18,'#9c8156',650,'center');}
-   if(piece){if(piece.soft){ctx.save();if(typeof ctx.setLineDash==='function')ctx.setLineDash([4,3]);rrect(px+2,py+2,edge-4,edge-4,8,null,'#b56b83');ctx.restore();}if(id===selected){ctx.lineWidth=2;rrect(px+2,py+2,edge-4,edge-4,4,null,C.ink);}const first=getShape(piece,state.forms[id])[0],at=state.placements[id];if(x===at.x+first[0]&&y===at.y+first[1])text(piece.soft?'S':id,px+edge/2,py+edge/2+5,Math.min(16,cell*.27),piece.soft?'#9c526f':C.ink,800,'center');if(flashPiece===id&&Date.now()<flashUntil){ctx.globalAlpha=.2;rrect(px,py,edge,edge,5,'#fff');ctx.globalAlpha=1;}}
-   if(previewCells.has(key)){ctx.globalAlpha=.65;rrect(px+1,py+1,edge-2,edge-2,5,preview.ok?'#9ecb9e':'#dc9d92');ctx.globalAlpha=1;}
+ function notify(message){toast=message;toastUntil=Date.now()+2200;requestDraw();}
+ if(sidebar)disposers.push(sidebar.subscribe(next=>{const returned=!sidebarState.enteredFromSidebar&&next.enteredFromSidebar;sidebarState=next;if(returned)notify('已从侧边栏回到仓库');invalidate();}));
+ function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(x,y,w,h);}
+ function line(x,y,ex,ey,color,width=1){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
+ function poly(points,color){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=color;ctx.fill();}
+ function rrect(x,y,w,h,r=3,fill,stroke){r=Math.max(0,Math.min(r,w/2,h/2));ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
+ function text(value,x,y,font=14,color=C.ink,weight=400,align='left'){ctx.font=`${weight} ${font}px ${FONT}`;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillStyle=color;ctx.fillText(String(value),x,y);}
+ function wrap(value,x,y,width,font=14,color=C.ink,lineHeight=22,maxLines=5){let current='',row=0;ctx.font=`400 ${font}px ${FONT}`;for(const ch of value){if(ctx.measureText(current+ch).width>width&&current){text(current,x,y+row*lineHeight,font,color);row++;current=ch;if(row>=maxLines)return;}else current+=ch;}if(current)text(current,x,y+row*lineHeight,font,color);}
+ function barcode(x,y,w,h,color=C.ink){let offset=0;for(let i=0;offset<w;i++){const width=i%3===0?3:1;rect(x+offset,y,Math.min(width,w-offset),h,color);offset+=width+(i%2===0?2:3);}}
+ function button(id,label,x,y,w,h,options={}){const disabled=!!options.disabled;ctx.globalAlpha=disabled ? .40 : 1;rect(x+1,y+3,w,h,C.ink);rrect(x,y,w,h,3,options.fill||C.paper,options.border||C.edge);text(label,x+w/2,y+h/2+5,options.font||14,options.color||C.ink,700,'center');if(options.tag)rect(x+6,y+6,4,h-12,C.orange);ctx.globalAlpha=1;targets.push({id,label,x,y,w,h,disabled,...options.data});}
+ function dimensions(){
+  size=platform.getSize();const safe={top:Math.max(0,Number(size.safeTop)||0),bottom:Math.max(0,Number(size.safeBottom)||0),left:Math.max(0,Number(size.safeLeft)||0),right:Math.max(0,Number(size.safeRight)||0)};
+  const availableWidth=Math.max(1,size.width-safe.left-safe.right),W=Math.min(480,availableWidth),H=Math.max(1,size.height-safe.top-safe.bottom);
+  return {W,H,scale:1,ox:safe.left+(availableWidth-W)/2,oy:safe.top,safeInsets:safe,compact:W<304||H<482,board:null,footerY:H-54,trayY:H-122};
+ }
+ function logical(event){const l=layout||dimensions();return {x:event.x-l.ox,y:event.y-l.oy};}
+ function warehouse(){
+  rect(0,0,size.width,size.height,C.warehouse);
+  for(let x=18;x<size.width;x+=180){rect(x,0,7,size.height,'#44513f');for(let y=70;y<size.height;y+=176){rect(x+20,y,64,56,'#45503e');rect(x+27,y+8,8,40,'#566045');rect(x+94,y+12,54,44,'#3f4939');}}
+  for(let y=132;y<size.height;y+=176){rect(0,y,size.width,8,'#58624a');rect(0,y+8,size.width,4,'#20281f');}
+ }
+ function parcelShape(piece,form,x,y,cell,alpha=1){const cells=getShape(piece,form);ctx.globalAlpha=alpha;for(const [dx,dy]of cells){const px=x+dx*cell,py=y+dy*cell;rrect(px,py,cell-2,cell-2,piece.soft?5:2,C[piece.color],C.edge);if(piece.soft){ctx.save();if(typeof ctx.setLineDash==='function')ctx.setLineDash([3,2]);rrect(px+3,py+3,cell-8,cell-8,3,null,'#994e74');ctx.restore();}else rect(px+cell*.42,py+2,Math.max(2,cell*.14),cell-6,'rgba(255,245,214,0.42)');}ctx.globalAlpha=1;}
+ function boxArt(x,y,w,h){rect(x+8,y+10,w,h,'#20261f');poly([[x,y],[x+w*.82,y],[x+w,y+18],[x+w,y+h],[x,y+h]],C.kraft);rect(x+8,y+9,w-16,h-17,'#a9753d');rect(x+14,y+15,w-28,h-29,'#ead5a8');rect(x+w*.43,y,20,h,'rgba(249,222,166,0.5)');barcode(x+w-64,y+h-32,40,16,C.edge);}
+ function drawHome(){
+  const {W,H}=layout,pad=20;
+  rect(pad,20,84,22,C.orange);text('PACK / 10',pad+9,36,12,C.ink,700);
+  text('快递收纳站',pad,86,Math.min(40,W*.102),C.paper,800);text('一箱一格，把空隙装满。',pad,114,14,'#c8d1b7');
+  const y=148,artH=Math.min(240,Math.max(76,H-428)),artW=Math.min(W-64,300);boxArt((W-artW)/2,y,artW,Math.max(76,artH));
+  const demo=LEVELS[4],soft=demo.pieces.find(p=>p.soft);parcelShape(soft,{rotation:0,compressed:true},W/2-25,y+18,Math.max(24,Math.min(50,artH*.32)));text('本地工位 / 无需赶时间',W/2,y+Math.max(76,artH)+34,12,C.muted,400,'center');
+  const startY=H-216;button('play',state.moves?'继续装箱':'开始装箱',pad,startY,W-pad*2,52,{fill:C.orange,font:18,tag:true});
+  const half=(W-pad*2-10)/2;button('levels','关卡货架',pad,startY+62,half,48);button('help','装箱说明',pad+half+10,startY+62,half,48);button('settings','工位设置',pad,startY+120,W-pad*2,48);
+  text(`${save.completed.length} / 10 箱已出库 · ${saveOK?'进度保存在此设备':'此设备无法存档'}`,W/2,H-16,11,C.muted,400,'center');
+ }
+ function drawCompact(){const {W,H}=layout;text('竖起手机，打开工位',W/2,Math.max(80,H*.3),20,C.paper,700,'center');wrap('请使用竖屏或放大窗口。装箱进度已保留，按钮不会被缩成小图标。',24,Math.max(110,H*.3+36),W-48,14,C.muted,23,4);button('home','返回仓库',24,H-70,W-48,48);}
+ function drawPlay(){
+  const {W,H,trayY,footerY}=layout;
+  button('menu','菜单',10,4,52,44,{fill:'#d3ba88'});button('help','说明',W-62,4,52,44,{fill:'#d3ba88'});
+  if(isWin(level,state))button('showWin','出库单',W/2-66,4,132,44,{fill:C.orange});else{text(`${String(level.id).padStart(2,'0')} 号装箱工位`,W/2,25,16,C.paper,700,'center');const chosen=level.pieces.find(p=>p.id===selected);text(chosen?`${chosen.id} ${chosen.name}${chosen.soft?(state.forms[chosen.id].compressed?' · 三格':' · 四格'):''}`:'点击包裹 · 对齐左上角',W/2,43,10,C.muted,400,'center');}
+  text(`装入 ${Object.keys(state.placements).length}/${level.pieces.length}`,14,70,12,C.paper,700);text(`空格 ${remainingCells(level,state)}`,W/2,70,12,C.paper,700,'center');text(`${state.moves} 步`,W-14,70,12,C.paper,700,'right');
+  const cell=Math.min((W-40)/level.width,(trayY-96)/level.height,88),bw=cell*level.width,bh=cell*level.height,bx=(W-bw)/2,by=84+((trayY-96)-bh)/2;
+  layout.board={x:bx,y:by,w:bw,h:bh,cell};rect(bx-12,by-12,bw+24,bh+24,'#80562f');rect(bx-8,by-8,bw+16,bh+16,C.kraft);rect(bx-3,by-3,bw+6,bh+6,'#a97642');
+  const occupied=occupiedCells(level,state),blocked=new Set(level.blocked.map(c=>c.join(',')));let preview=null;
+  if(drag&&drag.moved&&selected){const p=boardPoint(drag.current,drag.anchor);if(p)preview={...p,...canPlace(level,state,selected,p.x,p.y)};}
+  const previewCells=new Set();if(preview){const piece=level.pieces.find(p=>p.id===selected);getShape(piece,state.forms[selected]).forEach(([x,y])=>previewCells.add(`${x+preview.x},${y+preview.y}`));}
+  for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){
+   const key=`${x},${y}`,id=occupied.get(key),piece=level.pieces.find(p=>p.id===id),px=bx+x*cell+1.5,py=by+y*cell+1.5,edge=cell-3;
+   rrect(px,py,edge,edge,piece&&piece.soft?5:2,piece?C[piece.color]:blocked.has(key)?'#9d8158':'#e4cba1','#b18755');
+   if(blocked.has(key)){ctx.save();ctx.beginPath();ctx.rect(px,py,edge,edge);ctx.clip();for(let a=-edge;a<edge*2;a+=10)line(px+a,py,px+a+edge,py+edge,'#645a3e',3);ctx.restore();}
+   if(piece){if(piece.soft){ctx.save();if(typeof ctx.setLineDash==='function')ctx.setLineDash([4,3]);rrect(px+3,py+3,edge-6,edge-6,5,null,'#994e74');ctx.restore();}else rect(px+edge*.43,py+2,edge*.13,edge-4,'rgba(255,245,214,0.42)');if(id===selected){rrect(px+2,py+2,edge-4,edge-4,2,null,C.ink);rrect(px+3,py+3,edge-6,edge-6,2,null,C.ink);}const first=getShape(piece,state.forms[id])[0],at=state.placements[id];if(x===at.x+first[0]&&y===at.y+first[1]){rect(px+5,py+5,20,21,C.paper);text(id,px+15,py+21,13,C.ink,700,'center');}}
+   if(previewCells.has(key)){ctx.globalAlpha=.55;rect(px,py,edge,edge,preview.ok?'#73b473':'#d36153');ctx.globalAlpha=1;}
   }
-  const ty=desktop?668:516,tx=desktop?147:39;button('undo','↶ 撤回',tx,ty,desktop?112:96,35,{disabled:!state.history.length});button('restart','↻ 重装',tx+(desktop?124:108),ty,desktop?112:96,35);button('hint','☀ 拼法',tx+(desktop?248:216),ty,desktop?112:96,35);
-  if(!desktop)text(selected?`${level.pieces.find(p=>p.id===selected).name}：点格子放下，或直接拖动`:'选一件包裹，再点格子放下。',W/2,571,10,C.muted,500,'center');
-  const tray=desktop?{x:702,y:328,w:338,cols:3,h:83,gap:9}:{x:20,y:604,w:350,cols:level.pieces.length>8?5:Math.max(3,Math.min(4,level.pieces.length)),h:61,gap:7};if(!desktop){text('选一件，放进去',20,590,12,C.ink,750);text('点击 / 拖动 · 左上角对齐',370,590,8,C.muted,500,'right');}
-  const cw=(tray.w-(tray.cols-1)*tray.gap)/tray.cols;level.pieces.forEach((piece,i)=>{const x=tray.x+(i%tray.cols)*(cw+tray.gap),y=tray.y+Math.floor(i/tray.cols)*(tray.h+tray.gap),placed=!!state.placements[piece.id];rrect(x,y,cw,tray.h,9,piece.soft?'#fbeaf0':selected===piece.id?'#e8f0df':'#f1f4e8',selected===piece.id?C.ink:C.line);const cells=getShape(piece,state.forms[piece.id]),pc=desktop?14:10,sw=(Math.max(...cells.map(c=>c[0]))+1)*pc,sh=(Math.max(...cells.map(c=>c[1]))+1)*pc;shape(piece,state.forms[piece.id],x+(cw-sw)/2,y+(tray.h-19-sh)/2+3,pc,placed ? .42 : 1);text(`${piece.id} ${piece.soft?(state.forms[piece.id].compressed?'软包·3格':'软包·4格'):piece.name}`,x+cw/2,y+tray.h-9,desktop?9:7.5,C.ink,650,'center');if(placed)text('✓',x+cw-7,y+12,10,'#6e8b62',750,'right');targets.push({id:'piece',pieceId:piece.id,x,y,w:cw,h:tray.h});});
-  const sy=desktop?627:748,sx=desktop?702:20,sw=desktop?338:350,piece=level.pieces.find(p=>p.id===selected);if(desktop){text(piece?piece.name:'选好包裹，再点箱内格子放下',sx,612,11,C.muted,650);}
-  const soft=(piece && piece.soft),controlW=soft?(sw-16)/3:(sw-8)/2;button('rotate','↻ 旋转',sx,sy,controlW,39,{disabled:!selected,fill:C.ink,color:'#fff'});if(soft)button('compress',state.forms[selected].compressed?'⇠ 松一松':'⇢ 挤一下',sx+controlW+8,sy,controlW,39,{fill:'#c77591',color:'#fff'});button('remove','取出',sx+sw-controlW,sy,controlW,39,{disabled:!selected||!state.placements[selected]});
-  if(desktop)wrap(soft?'软包：4 格方形 ↔ 3 格 L 形，压缩后也能旋转。':'不用抢时间，也不怕放错。每次挪动，都离刚刚好更近一点。',sx,687,sw,10,C.muted,16,2);
-  text(saveOK?'进度保存在此设备 · Canvas 试玩版':'此设备无法存档，本次仍可游玩',W/2,desktop?746:798,8,C.muted,500,'center');
-  if(isWin(level,state)&&!modal){button('showWin','✓ 出库成功，继续 →',desktop?260:105,desktop?638:475,desktop?180:180,32,{fill:C.ink,color:'#fff'});}
-  if((drag && drag.moved)&&selected){const p=level.pieces.find(p=>p.id===selected);shape(p,state.forms[selected],drag.current.x+10,drag.current.y+10,18,.85);}
-  if(modal)drawModal();
-  if(toast&&Date.now()<toastUntil){const tw=Math.min(W-30,Math.max(210,toast.length*11+28)),yy=modal?H-57:desktop?720:552;rrect((W-tw)/2,yy-21,tw,35,9,'rgba(41,67,56,0.937)');text(toast,W/2,yy+1,10,'#fff',500,'center');}
-  inputReady=true;if(Date.now()<flashUntil||Date.now()<toastUntil)requestDraw();
+  // One accessible row of parcels. Pagination preserves 44px targets on 320px phones.
+  const pages=Math.ceil(level.pieces.length/3),gap=5,side=44,cardW=(W-20-side*2-gap*4)/3;
+  rect(8,trayY-7,W-16,68,'#546148');button('trayPrev','‹',10,trayY,side,56,{disabled:trayPage===0,font:24,fill:'#b8bc94'});
+  level.pieces.slice(trayPage*3,trayPage*3+3).forEach((piece,i)=>{const x=10+side+gap+i*(cardW+gap),y=trayY,placed=!!state.placements[piece.id],chosen=selected===piece.id;rect(x+1,y+3,cardW,56,C.ink);rrect(x,y,cardW,56,2,chosen?C.orange:piece.soft?'#f1c2d3':C.paper,chosen?C.orange:C.edge);const cells=getShape(piece,state.forms[piece.id]),cols=Math.max(...cells.map(c=>c[0]))+1,rows=Math.max(...cells.map(c=>c[1]))+1,pc=Math.min(12,(cardW-12)/cols,30/rows);parcelShape(piece,state.forms[piece.id],x+(cardW-cols*pc)/2,y+5+(30-rows*pc)/2,pc,placed ? .45 : 1);text(`${piece.id}${piece.soft?' 软包':''}${placed?' ✓':''}`,x+cardW/2,y+48,11,C.ink,700,'center');targets.push({id:'piece',pieceId:piece.id,label:`包裹 ${piece.id}`,x,y,w:cardW,h:56,disabled:false});});
+  button('trayNext','›',W-54,trayY,side,56,{disabled:trayPage>=pages-1,font:24,fill:'#b8bc94'});
+  const piece=level.pieces.find(p=>p.id===selected),w=(W-20-18)/4,soft=!!(piece&&piece.soft);
+  button('rotate','旋转',10,footerY,w,48,{disabled:!selected,fill:C.orange});button('compress',soft?(state.forms[selected].compressed?'展开':'压缩'):'软包',10+w+6,footerY,w,48,{disabled:!soft,fill:'#e7a5be'});button('remove','取出',10+(w+6)*2,footerY,w,48,{disabled:!selected||!state.placements[selected]});button('undo','撤回',10+(w+6)*3,footerY,w,48,{disabled:!state.history.length});
  }
- function drawModal(){const {W,H,desktop}=layout;ctx.fillStyle='rgba(35,58,49,0.502)';ctx.fillRect(0,0,W,H);targets=[];const mw=Math.min(W-32,460),mx=(W-mw)/2,mt=modal==='help'?106:modal==='levels'?195:modal==='hint'?145:245,mh=modal==='help'?535:modal==='levels'?350:modal==='hint'?470:300;rrect(mx,mt,mw,mh,19,'#fffcf3',C.line);if(modal!=='restart')button('close','×',mx+mw-43,mt+13,29,29,{font:20});
-  if(modal==='levels'){text('我的装箱手册',mx+22,mt+43,23,C.ink,800);text('10 关自由体验，第 5 关开始软包玩法',mx+22,mt+68,10,C.muted);const gap=9,cw=(mw-44-gap*4)/5;LEVELS.forEach((l,i)=>{const x=mx+22+i%5*(cw+gap),y=mt+92+Math.floor(i/5)*83;button(`level:${l.id}`,String(l.id).padStart(2,'0'),x,y,cw,66,{font:22,fill:save.completed.includes(l.id)?'#e0edd7':'#f0f3e7',border:level.id===l.id?C.ink:C.line});text(save.completed.includes(l.id)?'已出库':l.id>=5?'软包关':'普通关',x+cw/2,y+55,8,C.muted,500,'center');});wrap('换关会替换未完成的摆放，通关记录保留。',mx+22,mt+285,mw-44,10,C.muted,17,2);}
-  if(modal==='help'){text('装箱小抄',mx+22,mt+43,23,C.ink,800);const rows=[['1. 放下','点击包裹，再点箱内格子；以形状左上角对齐。也可以直接拖动。'],['2. 转一转','选中包裹后按旋转。已装入的包裹也能移动、旋转、取出。'],['3. 挤一挤','粉色软包可从 4 格方形压成 3 格 L 形，也可展开恢复 4 格。'],['4. 刚刚好','所有包裹放入，并填满全部非隔板格子，才能出库。']];rows.forEach(([title,body],i)=>{text(title,mx+23,mt+88+i*80,13,C.ink,750);wrap(body,mx+23,mt+111+i*80,mw-46,11,C.muted,18,2);});wrap('进度只存在当前设备。清理数据会丢失。重新打开可以恢复摆放，但撤回历史会重置。',mx+23,mt+428,mw-46,10,C.muted,18,3);button('close','好，开始装箱',mx+23,mt+480,mw-46,35,{fill:C.ink,color:'#fff'});}
-  if(modal==='hint'){text('一种刚刚好的拼法',mx+22,mt+43,21,C.ink,800);text('看一眼也没关系，不会改动你的箱子。',mx+22,mt+69,10,C.muted);const cell=Math.min((mw-80)/level.width,270/level.height),width=cell*level.width,bx=mx+(mw-width)/2,by=mt+100;level.solutionMap.forEach((row,y)=>[...row].forEach((id,x)=>{const p=level.pieces.find(p=>p.id===id);rrect(bx+x*cell+1,by+y*cell+1,cell-3,cell-3,5,p?C[p.color]:'#c9b38d');text(id==='#'?'×':id,bx+(x+.5)*cell,by+(y+.5)*cell+5,15,C.ink,750,'center');}));const soft=level.solution.find(s=>s.pieceId==='S');text(soft?`本关软包使用 ${soft.compressed?'压缩 · 3 格 L 形':'展开 · 4 格方形'}`:'颜色与字母对应包裹，也可能有其他解法。',mx+mw/2,mt+416,11,C.muted,500,'center');}
-  if(modal==='sidebarInfo'){text('从侧边栏回来',mx+22,mt+44,23,C.ink,800);wrap('下次可从抖音首页侧边栏找到快递收纳站。点击下方按钮打开侧边栏，再点击游戏返回。',mx+22,mt+81,mw-44,12,C.muted,21,3);text(sidebarState.enteredFromSidebar?'已确认：本次从侧边栏进入。':'尚未检测到本次从侧边栏进入。',mx+22,mt+163,11,sidebarState.enteredFromSidebar?'#567b4e':C.muted,650);button('sidebarNavigate',sidebarState.pending?'正在打开…':'打开侧边栏',mx+22,mt+189,mw-44,42,{fill:C.ink,color:'#fff',disabled:!sidebarState.available||sidebarState.pending});text('快捷返回入口，不发放或承诺任何奖励。',mx+mw/2,mt+265,10,C.muted,500,'center');}
-  if(modal==='restart'){text('重新整理这一箱？',mx+22,mt+50,23,C.ink,800);wrap('当前摆放和撤回历史会清空，已经通关的记录会保留。',mx+22,mt+88,mw-44,12,C.muted,22,3);button('close','接着装',mx+22,mt+176,(mw-52)/2,45);button('confirmRestart','重新装箱',mx+30+(mw-52)/2,mt+176,(mw-52)/2,45,{fill:C.ink,color:'#fff'});}
-  if(modal==='win'){text('♥',mx+mw/2,mt+58,39,'#c59b5d',800,'center');text(level.id===10?'十箱心意，都装好啦！':'刚刚好，出库啦！',mx+mw/2,mt+105,25,C.ink,800,'center');text(`${state.moves} 次操作 · 已完成 ${save.completed.length} / 10 箱`,mx+mw/2,mt+137,12,C.muted,500,'center');button('next',level.id===10?'看看装箱手册 →':'下一箱，继续装 →',mx+25,mt+179,mw-50,44,{fill:C.ink,color:'#fff',font:13});button('levels','回到装箱手册',mx+25,mt+237,mw-50,33,{font:11});}
+ function modalHeader(title){const {W,H}=layout;rect(4,4,W-8,H-8,C.paper);rect(4,4,W-8,7,C.kraft);barcode(20,22,45,17);text('PACKING RECORD',74,35,10,C.edge,700);button('close','返回',W-70,18,50,44,{fill:'#dfc99e'});text(title,20,88,24,C.ink,800);line(20,103,W-20,103,'#bca77e');targets=targets.filter(t=>t.id==='close');}
+ function drawModal(){
+  const {W,H}=layout;targets=[];ctx.fillStyle='rgba(20,25,19,0.8)';ctx.fillRect(0,0,W,H);
+  const titles={menu:'工位运单夹',levels:'关卡货架',help:'装箱说明',settings:'工位设置',hint:'参考装箱图',restart:'重新装这一箱？',win:'出库成功',sidebarInfo:'侧边栏复访'};
+  modalHeader(titles[modal]||'运单');
+  if(modal==='menu'){
+   const y=120,w=(W-50)/2;button('play','继续装箱',20,y,W-40,48,{fill:C.orange});
+   [['levels','关卡货架'],['help','装箱说明'],['hint','参考拼法'],['restart','重新装箱'],['settings','工位设置'],['home','返回仓库']].forEach(([id,label],i)=>button(id,label,20+(i%2)*(w+10),y+62+Math.floor(i/2)*58,w,48));
+   wrap(level.title+'。'+level.hint,20,H-70,W-40,12,C.edge,19,3);
+  }else if(modal==='levels'){
+   text('十个工位自由体验 · 第五关出现软包',20,126,12,C.edge);const w=(W-50)/2,h=50;
+   LEVELS.forEach((item,i)=>{const x=20+(i%2)*(w+10),y=142+Math.floor(i/2)*58;button(`level:${item.id}`,`${String(item.id).padStart(2,'0')}  ${save.completed.includes(item.id)?'已出库':item.id>=5?'软包箱':'普通箱'}`,x,y,w,h,{fill:level.id===item.id?C.orange:C.paper,font:14});});
+   wrap('换关会替换当前摆放，已通关记录保留。',20,H-24,W-40,11,C.edge,16,1);
+  }else if(modal==='help'){
+   const pages=[['选包裹，放进箱子','先点货架上的包裹，再点箱内格子。以形状左上角对齐，也可以拖动放下。'],['转个方向，再试一次','选中包裹后点「旋转」。已放入的包裹也能旋转、挪动或取出。'],['粉色软包会挤也会松','软包可在四格方形和三格L形间切换。压缩或展开后仍可以旋转。'],['全部装入，填满空格','所有包裹都要放进箱子，除隔板外不能留空。放错可撤回，也能看参考拼法。']];
+   const page=pages[tutorialPage];text(`${tutorialPage+1} / 4`,W-22,126,12,C.edge,700,'right');text(page[0],22,157,18,C.ink,700);wrap(page[1],22,188,W-44,14,C.ink,24,4);
+   const demo=LEVELS[4],piece=tutorialPage===2?demo.pieces.find(p=>p.soft):LEVELS[1].pieces[0],cell=Math.min(44,(H-330)/3);parcelShape(piece,{rotation:tutorialPage===1?1:0,compressed:tutorialPage===2},W/2-cell,Math.max(268,H/2+20),cell);
+   const w=(W-50)/2;button('tutorialPrev','上一步',20,H-74,w,48,{disabled:tutorialPage===0});button('tutorialNext',tutorialPage===3?'开始装箱':'下一步',30+w,H-74,w,48,{fill:C.orange});
+  }else if(modal==='settings'){
+   button('sound',save.sound?'音效：开启':'音效：关闭',20,126,W-40,52,{fill:C.orange});
+   if(sidebarState.available)button('sidebarInfo',sidebarState.enteredFromSidebar?'复访已确认':'侧边栏复访',20,192,W-40,48);
+   text('存档只在当前设备',20,sidebarState.available?280:228,17,C.ink,700);wrap('清理数据或更换设备后进度可能丢失。重新打开会恢复箱内摆放，但不会保留撤回历史。',20,sidebarState.available?310:258,W-40,14,C.edge,24,5);text(saveOK?'本地存档可用':'存档不可用，仍可继续游玩',20,H-34,12,saveOK?'#536d42':C.red,700);
+  }else if(modal==='hint'){
+   text('只供参考，不改变当前摆放',20,128,12,C.edge);const cell=Math.min((W-52)/level.width,(H-220)/level.height),bw=cell*level.width,bx=(W-bw)/2,by=151;
+   level.solutionMap.forEach((row,y)=>[...row].forEach((id,x)=>{const piece=level.pieces.find(p=>p.id===id);rect(bx+x*cell+1,by+y*cell+1,cell-2,cell-2,piece?C[piece.color]:'#a48f6d');text(id,bx+(x+.5)*cell,by+(y+.5)*cell+5,15,C.ink,700,'center');}));
+   const soft=level.solution.find(s=>s.pieceId==='S');wrap(soft?`本关软包：${soft.compressed?'压缩为三格L形':'展开为四格方形'}。`:'相同字母是同一件包裹，也可能有其他拼法。',20,H-42,W-40,12,C.edge,20,2);
+  }else if(modal==='restart'){
+   wrap('当前摆放、操作步数和撤回历史会清空。已经通关的记录会保留。',22,152,W-44,16,C.ink,27,5);const w=(W-50)/2;button('close','接着装',20,H-86,w,52);button('confirmRestart','重新装箱',30+w,H-86,w,52,{fill:C.orange});
+  }else if(modal==='win'){
+   rect(22,126,W-44,70,'#e9d8ad');text(save.completed.length===LEVELS.length?'十箱心意，都装好啦！':'刚刚好，出库啦！',W/2,156,20,C.ink,800,'center');text(`${state.moves} 次操作 / ${save.completed.length} 箱已出库`,W/2,181,14,C.edge,400,'center');barcode(34,214,W-68,24);text(`运单 NO. ${String(level.id).padStart(3,'0')}`,W/2,263,12,C.edge,700,'center');
+   button('next',level.id===10?'查看关卡货架':'下一箱，继续装',20,H-186,W-40,48,{fill:C.orange});button('restart','重装这一箱',20,H-128,W-40,48);button('levels','回到关卡货架',20,H-70,W-40,48);
+  }else if(modal==='sidebarInfo'){
+   wrap('下次可从抖音首页侧边栏找到快递收纳站。点击下方按钮打开侧边栏，再点击游戏返回。',20,149,W-40,15,C.ink,25,5);text(sidebarState.enteredFromSidebar?'复访已确认':'尚未检测到本次从侧边栏返回',20,H-158,12,C.edge,700);button('sidebarNavigate',sidebarState.pending?'正在打开…':'打开侧边栏',20,H-128,W-40,48,{fill:C.orange,disabled:!sidebarState.available||sidebarState.pending});text('快捷入口，不发放或承诺奖励。',20,H-50,12,C.edge);
+  }
  }
- function boardPoint(p,anchor={x:0,y:0}){const b=layout && layout.board;if(!b||p.x<b.x||p.y<b.y||p.x>=b.x+b.w||p.y>=b.y+b.h)return null;return {x:Math.floor((p.x-b.x)/b.cell)-anchor.x,y:Math.floor((p.y-b.y)/b.cell)-anchor.y};}
- function action(type,extra={}){const beforeWin=isWin(level,state),result=applyAction(level,state,{type,pieceId:selected,...extra});if(!result.ok){notify(result.reason);platform.audio.play('error');return;}state=result.state;inputReady=false;targets=[];persist();if(type==='place'){flashPiece=selected;flashUntil=Date.now()+240;platform.audio.play('place');}else if(type==='compress')platform.audio.play('squeeze');else platform.audio.play('tap');if(!beforeWin&&isWin(level,state)){if(!save.completed.includes(level.id))save.completed.push(level.id);save.bestMoves[level.id]=Math.min(save.bestMoves[level.id]===undefined?Infinity:save.bestMoves[level.id],state.moves);persist();modal='win';platform.audio.play('win');}requestDraw();}
- function switchLevel(id){level=getLevel(id);state=createState(level);selected=null;modal=null;drag=null;inputReady=false;targets=[];persist();requestDraw();}
- function activate(hit){if(!hit||hit.disabled)return;const id=hit.id;if(id==='piece'){selected=hit.pieceId;platform.audio.play('tap');}else if(id==='sound'){save.sound=!save.sound;platform.audio.setMuted(!save.sound);persist();platform.audio.play('tap');}else if(id==='sidebarInfo'){if(sidebarState.available)modal='sidebarInfo';}else if(id==='sidebarNavigate'){if(sidebar&&sidebarState.available&&!sidebarState.pending){modal=null;persist();sidebar.navigate().then(ok=>{if(!destroyed&&!ok)notify('这次未打开侧边栏，可以继续装箱');});}}else if(['help','levels','hint','restart'].includes(id)){modal=id;}else if(id==='close'){modal=null;}else if(id.startsWith('level:')){switchLevel(Number(id.split(':')[1]));}else if(id==='confirmRestart'){state=createState(level);selected=null;modal=null;persist();}else if(['rotate','compress','remove','undo'].includes(id)){action(id);}else if(id==='showWin'){modal='win';}else if(id==='next'){if(level.id===10)modal='levels';else switchLevel(level.id+1);}inputReady=false;targets=[];requestDraw();}
- function pointer(event){if(destroyed||paused)return;const p=logical(event);
-  if(event.type==='down'){if(drag||!inputReady)return;const hit=[...targets].reverse().find(h=>p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h);if(hit){if(hit.id==='piece'&&!hit.disabled){selected=hit.pieceId;drag={id:event.id,start:p,current:p,moved:false,pieceId:selected,anchor:{x:0,y:0},hit};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,hit};return;}if(modal)return;const at=boardPoint(p);if(at){const id=occupiedCells(level,state).get(`${at.x},${at.y}`);if(selected&&selected!==id&&canPlace(level,state,selected,at.x,at.y).ok){drag={id:event.id,start:p,current:p,moved:false,at};}else if(id){selected=id;const pos=state.placements[id];drag={id:event.id,start:p,current:p,moved:false,pieceId:id,anchor:{x:at.x-pos.x,y:at.y-pos.y}};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,at};}}
-  else if(drag&&event.id===drag.id){if(event.type==='cancel'){drag=null;requestDraw();return;}if(event.type==='move'){drag.current=p;if(drag.pieceId&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>6)drag.moved=true;requestDraw();}else if(event.type==='up'){const ended=drag;drag=null;if(ended.moved&&ended.pieceId){const at=boardPoint(p,ended.anchor);if(at)action('place',at);else notify('还没有放下，包裹仍在原位');}else if(ended.hit){const hit=ended.hit;if(p.x>=hit.x&&p.x<=hit.x+hit.w&&p.y>=hit.y&&p.y<=hit.y+hit.h)activate(hit);}else if(ended.at&&Math.hypot(p.x-ended.start.x,p.y-ended.start.y)<10){if(selected)action('place',ended.at);else notify('先从下方选一个包裹吧');}requestDraw();}}
+ function draw(){
+  frame=null;if(destroyed)return;layout=dimensions();const dpr=size.dpr||1;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.width,size.height);warehouse();ctx.translate(layout.ox,layout.oy);targets=[];
+  if(layout.compact)drawCompact();else if(screen==='home')drawHome();else drawPlay();
+  if(modal&&!layout.compact)drawModal();
+  if(toast&&Date.now()<toastUntil){const w=layout.W-24;rect(12,layout.H-110,w,42,'rgba(34,42,30,0.94)');text(toast,layout.W/2,layout.H-85,12,C.paper,700,'center');}
+  inputReady=true;if(Date.now()<toastUntil)requestDraw();
  }
- disposers.push(platform.onPointer(pointer),platform.onResize(()=>{size=platform.getSize();drag=null;inputReady=false;targets=[];requestDraw();}),platform.onPause(()=>{paused=true;drag=null;inputReady=false;targets=[];if(frame!==null){platform.cancelFrame(frame);frame=null;}persist();}),platform.onResume(()=>{paused=false;inputReady=false;requestDraw();}));
- if(loaded.status==='unavailable')notify('存档暂时不可用，可以照常游玩');requestDraw();
- return {destroy(){if(destroyed)return;persist();destroyed=true;disposers.forEach(fn=>{if(fn)fn();});if(frame!==null)platform.cancelFrame(frame);}};
+ function openModal(next){if(modal)trail.push(modal);modal=next;if(next==='help')tutorialPage=0;drag=null;invalidate();}
+ function closeModal(){modal=trail.length?trail.pop():null;drag=null;invalidate();}
+ function boardPoint(p,anchor={x:0,y:0}){const b=layout&&layout.board;if(!b||p.x<b.x||p.y<b.y||p.x>=b.x+b.w||p.y>=b.y+b.h)return null;return {x:Math.floor((p.x-b.x)/b.cell)-anchor.x,y:Math.floor((p.y-b.y)/b.cell)-anchor.y};}
+ function action(type,extra={}){
+  const beforeWin=isWin(level,state),result=applyAction(level,state,{type,pieceId:selected,...extra});if(!result.ok){notify(result.reason);platform.audio.play('error');return;}
+  state=result.state;persist();platform.audio.play(type==='place'?'place':type==='compress'?'squeeze':'tap');
+  if(!beforeWin&&isWin(level,state)){if(!save.completed.includes(level.id))save.completed.push(level.id);save.bestMoves[level.id]=Math.min(save.bestMoves[level.id]||Infinity,state.moves);persist();modal='win';trail=[];platform.audio.play('win');}invalidate();
+ }
+ function switchLevel(id){level=getLevel(id);state=createState(level);selected=null;modal=null;trail=[];drag=null;trayPage=0;screen='play';persist();invalidate();}
+ function activate(hit){
+  if(!hit||hit.disabled)return;const id=hit.id;
+  if(id==='piece'){selected=hit.pieceId;platform.audio.play('tap');}
+  else if(id==='play'){screen='play';modal=null;trail=[];}
+  else if(id==='home'){screen='home';modal=null;trail=[];persist();}
+  else if(id==='sound'){save.sound=!save.sound;platform.audio.setMuted(!save.sound);persist();platform.audio.play('tap');}
+  else if(['menu','help','levels','hint','restart','settings','sidebarInfo'].includes(id))openModal(id);
+  else if(id==='close')closeModal();
+  else if(id==='tutorialPrev')tutorialPage=Math.max(0,tutorialPage-1);
+  else if(id==='tutorialNext'){if(tutorialPage<3)tutorialPage++;else{screen='play';modal=null;trail=[];}}
+  else if(id==='trayPrev')trayPage=Math.max(0,trayPage-1);
+  else if(id==='trayNext')trayPage=Math.min(Math.ceil(level.pieces.length/3)-1,trayPage+1);
+  else if(id.startsWith('level:'))switchLevel(Number(id.split(':')[1]));
+  else if(id==='confirmRestart'){state=createState(level);selected=null;modal=null;trail=[];screen='play';trayPage=0;persist();}
+  else if(['rotate','compress','remove','undo'].includes(id))action(id);
+  else if(id==='showWin'){modal='win';trail=[];}
+  else if(id==='next'){if(level.id===10){modal='levels';trail=[];}else switchLevel(level.id+1);}
+  else if(id==='sidebarNavigate'&&sidebar&&sidebarState.available&&!sidebarState.pending){sidebar.navigate().then(ok=>{if(!ok&&!destroyed)notify('暂时无法打开侧边栏');}).catch(()=>{if(!destroyed)notify('暂时无法打开侧边栏');});}
+  invalidate();
+ }
+ function pointer(event){
+  if(destroyed||paused)return;const p=logical(event);
+  if(event.type==='down'){
+   if(drag||!inputReady)return;const hit=[...targets].reverse().find(h=>p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h);
+   if(hit){if(hit.id==='piece'&&!hit.disabled){selected=hit.pieceId;drag={id:event.id,start:p,current:p,moved:false,pieceId:selected,anchor:{x:0,y:0},hit};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,hit};return;}
+   if(modal||screen!=='play'||layout.compact)return;const at=boardPoint(p);if(at){const id=occupiedCells(level,state).get(`${at.x},${at.y}`);if(selected&&selected!==id&&canPlace(level,state,selected,at.x,at.y).ok)drag={id:event.id,start:p,current:p,moved:false,at};else if(id){selected=id;const pos=state.placements[id];drag={id:event.id,start:p,current:p,moved:false,pieceId:id,anchor:{x:at.x-pos.x,y:at.y-pos.y}};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,at};}
+  }else if(drag&&event.id===drag.id){
+   if(event.type==='cancel'){drag=null;requestDraw();return;}if(event.type==='move'){drag.current=p;if(drag.pieceId&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>6)drag.moved=true;requestDraw();}
+   else if(event.type==='up'){const ended=drag;drag=null;if(ended.moved&&ended.pieceId){const at=boardPoint(p,ended.anchor);if(at)action('place',at);else notify('未放下，包裹仍在原位');}else if(ended.hit){const hit=ended.hit;if(p.x>=hit.x&&p.x<=hit.x+hit.w&&p.y>=hit.y&&p.y<=hit.y+hit.h)activate(hit);}else if(ended.at&&Math.hypot(p.x-ended.start.x,p.y-ended.start.y)<10){if(selected)action('place',ended.at);else notify('先选一件包裹');}requestDraw();}
+  }
+ }
+ disposers.push(platform.onPointer(pointer),platform.onResize(()=>{size=platform.getSize();drag=null;invalidate();}),platform.onPause(()=>{paused=true;drag=null;inputReady=false;targets=[];if(frame!==null){platform.cancelFrame(frame);frame=null;}persist();}),platform.onResume(()=>{paused=false;invalidate();}));
+ if(loaded.status==='unavailable')notify('存档暂时不可用，仍可游玩');requestDraw();
+ return {
+  getSnapshot(){const l=layout||dimensions();return JSON.parse(JSON.stringify({screen,modal,tutorialPage,trayPage,levelId:level.id,selected,state,completed:save.completed,sound:save.sound,saveOK,paused,destroyed,sidebar:sidebarState,layout:l,hitTargets:targets.map(t=>({...t,screenX:t.x+l.ox,screenY:t.y+l.oy,screenWidth:t.w,screenHeight:t.h}))}));},
+  destroy(){if(destroyed)return;persist();destroyed=true;disposers.forEach(fn=>{if(fn)fn();});if(frame!==null)platform.cancelFrame(frame);}
+ };
 }

@@ -12,9 +12,19 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
   let size;
   function resize() {
     const info = api.getSystemInfoSync();
-    const next = { width: info.windowWidth || info.screenWidth, height: info.windowHeight || info.screenHeight, dpr: Math.min(info.pixelRatio || 1, 3), safeTop: (Number(info.statusBarHeight) || 0) + 48, safeBottom: 12 };
+    const width = info.windowWidth || info.screenWidth, height = info.windowHeight || info.screenHeight;
+    const safe = info.safeArea || {};
+    let menuBottom = 0;
+    if (typeof api.getMenuButtonBoundingClientRect === 'function') {
+      try { const menu = api.getMenuButtonBoundingClientRect(); if (menu && Number.isFinite(menu.bottom)) menuBottom = menu.bottom + 6; } catch (_error) { /* Capability is optional. */ }
+    }
+    const next = { width, height, dpr: Math.min(info.pixelRatio || 1, 3),
+      safeTop: Math.max(Number(safe.top) || 0, menuBottom || ((Number(info.statusBarHeight) || 0) + 48)),
+      safeBottom: Math.max(12, Number.isFinite(safe.bottom) ? height - safe.bottom : 0),
+      safeLeft: Math.max(0, Number(safe.left) || 0),
+      safeRight: Math.max(0, Number.isFinite(safe.right) ? width - safe.right : 0) };
     if (!(next.width > 0 && next.height > 0)) throw new Error('Platform viewport dimensions are missing');
-    if (size && next.width === size.width && next.height === size.height && next.dpr === size.dpr && next.safeTop === size.safeTop) return;
+    if (size && next.width === size.width && next.height === size.height && next.dpr === size.dpr && next.safeTop === size.safeTop && next.safeBottom === size.safeBottom && next.safeLeft === size.safeLeft && next.safeRight === size.safeRight) return;
     size = next;
     canvas.width = Math.round(size.width * size.dpr);
     canvas.height = Math.round(size.height * size.dpr);
