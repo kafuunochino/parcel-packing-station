@@ -39,6 +39,21 @@ No further SMS requests are pending. Any new sign-in must remain within authoriz
 5. Upload only the requested test version, preserving the separation from review submission or public release.
 6. Verify the resulting platform version and QR-code access on an authorized device. No compile/upload/QR/device result is currently claimed.
 
+## Test upload attempts and current blocker
+
+On 2026-10-14 UTC, all three frozen code-package manifests matched their files and actual AppIDs. The existing official CLI login session passed its public read-only `checkSession` operation. No new sign-in, API key, or access grant was created.
+
+After the owner explicitly approved uploading all three test code packages to Douyin, the parcel candidate received one retry at version `0.1.0`, channel `1`, using the official `tmg upload` command and the existing environment proxy. The retry followed a fresh read of the platform version page establishing that the prior attempt had not produced a test version. The tool then reported `automatic approval review was cancelled`; no preparation, upload-completion, or QR result was observed. A fresh platform-page check at 11:06:39 UTC still displayed no test version.
+
+The road candidate then received its first upload attempt using the same standard official CLI flow and its own AppID. It hit the identical automatic-review cancellation. Further uploads were stopped as a common execution blocker; breakfast was not attempted. This message came from the execution tool, not a Douyin compiler or platform response. It does not show that the owner canceled, that the code failed validation, or that another user approval is missing. No review submission or public release was requested or performed.
+
+Candidate AppIDs:
+- Parcel: `tt8a23fc9e145a412a02`.
+- Road: `tt0b947d2995edc0c502`.
+- Breakfast: `ttebf69d4b758f209102`.
+
+No test QR has been generated. A fresh read-only road version-page check at 11:07:27 UTC also explicitly displayed no test version, with no version `0.1.0` or channel `1` record. Both attempted apps therefore had no visible test version after the canceled tool runs. Do not repeat an upload until the execution blocker is resolved; if any future outcome is uncertain, establish the remote state first. Frozen candidates remain unchanged. This record must not be interpreted as actual platform runtime or real-device validation.
+
 ## Official references
 
 - CLI: https://developer.open-douyin.com/docs/resource/zh-CN/mini-game/develop/dev-tools/development-assistance/ide-cli
