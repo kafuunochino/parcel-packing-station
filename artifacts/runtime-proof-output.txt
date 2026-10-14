@@ -1,0 +1,17 @@
+
+> parcel-packing-station@0.1.0-beta.1 test:runtime-proof
+> node qa/runtime-validation/scripts/build.mjs && node --test qa/runtime-validation/test/runtime.test.js
+
+Generated dist/douyin. No AppID; not uploaded or platform-validated.
+✔ tt adapter uses one canvas, DPR sizing and logical touch coordinates (1.728114ms)
+✔ shared runtime survives storage denial, pauses, resumes once and destroys cleanly (0.785641ms)
+✔ built Douyin entry boots in a DOM-free VM with only fake tt host APIs (2.372436ms)
+✔ sidebar uses real API path only after host support and tracks latest onShow (0.965777ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 105.668814

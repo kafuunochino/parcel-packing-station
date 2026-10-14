@@ -56,6 +56,7 @@ npm start
 
 - `npm test`：72 个规则、存档、运行时与最终构建测试；其中包含模拟平台流程，不是浏览器自动化。
 - `npm run verify`：逐关执行全部参考解。
+- `npm run test:runtime-proof`：单独运行保存的平台运行时验证快照，不计入游戏自身 72 项测试。
 - `npm run build`：生成单文件浏览器 Demo 与抖音候选导入目录。
 - `npm start`：本机静态服务器，默认 `http://127.0.0.1:4171`。可用 `PORT=4183 npm start` 改端口。服务是否能被其他执行环境访问需单独确认。
 - `dist/parcel-demo.html` 自包含所有源码和短音效，可作为私人离线试玩文件打开，不必拉取外部资源；浏览器对 `file://` 存储行为各异，存储受限时游戏会提示并继续运行。
@@ -82,6 +83,7 @@ scripts/generate-audio.py  可重复生成原创音效
 artifacts/                自动化测试输出
  design/                   已归档的静态 DOM/CSS 视觉草图，不进入构建
  dist/                     生成的浏览器 Demo 与抖音候选目录
+qa/runtime-validation/     独立平台验证的小型源码与测试快照
 PLATFORM_INTERFACE.md      平台接口与边界
 TEST_PLAN.md               测试状态与验收清单
 ```

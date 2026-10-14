@@ -1,0 +1,16 @@
+
+> test
+> node --test
+
+✔ tt adapter uses one canvas, DPR sizing and logical touch coordinates (1.840281ms)
+✔ shared runtime survives storage denial, pauses, resumes once and destroys cleanly (0.814744ms)
+✔ built Douyin entry boots in a DOM-free VM with only fake tt host APIs (2.135747ms)
+✔ sidebar uses real API path only after host support and tracks latest onShow (1.047589ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 95.472718

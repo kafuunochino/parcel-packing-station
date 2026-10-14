@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas2D compatibility proof</title><style>html,body{margin:0;height:100%;background:#173e36}canvas{display:block;width:min(100vw,480px);height:100dvh;margin:auto;touch-action:none}</style><canvas id="screen"></canvas><script type="module">
+import { createBrowserPlatform } from './adapters/browser.js';
+import { startGame } from './src/runtime.js';
+const platform = createBrowserPlatform(document.querySelector('canvas'), window, {tap:'./assets/tap.wav'});
+window.spike = startGame(platform);
+window.spikePlatform = platform;
+</script></html>
