@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {LEVELS} from '../src/levels.js';
+import {createCampaignState,applyCampaignAction,findCompletion,campaignWin} from '../src/campaign-rules.js';
+const records=[];
+for(const level of LEVELS){let state=createCampaignState(level);const initial=findCompletion(level,state,{maxNodes:100000});assert.equal(initial.status,'solved',`level ${level.id} initially solvable`);
+ for(let stage=0;stage<level.batches.length;stage++){for(const id of level.batches[stage]){const p=level.solution.find(p=>p.pieceId===id);const act=a=>{const r=applyCampaignAction(level,state,a);assert.ok(r.ok,`${level.id}: ${r.reason}`);state=r.state;};if(state.forms[id].compressed!==p.compressed)act({type:'compress',pieceId:id});for(let r=0;r<p.rotation;r++)act({type:'rotate',pieceId:id});act({type:'place',...p});}if(stage<level.batches.length-1){const r=applyCampaignAction(level,state,{type:'seal'});assert.ok(r.ok);state=r.state;assert.notEqual(state.status,'failed',`canonical seal ${level.id}/${stage}`);}}
+ assert.equal(campaignWin(level,state),true);let deadlock=false;if(level.badSeal){let bad=createCampaignState(level),p=level.badSeal;for(let r=0;r<p.rotation;r++)bad=applyCampaignAction(level,bad,{type:'rotate',pieceId:p.pieceId}).state;bad=applyCampaignAction(level,bad,{type:'place',...p}).state;bad=applyCampaignAction(level,bad,{type:'seal'}).state;assert.equal(bad.status,'failed',`bad seal witness ${level.id}`);const revived=applyCampaignAction(level,bad,{type:'revive'});assert.ok(revived.ok);assert.equal(revived.state.stage,0);assert.equal(revived.state.sealed.length,0);deadlock=true;}
+ records.push({id:level.id,chapter:level.chapter,batches:level.batches.length,pieces:level.pieces.length,initialSolverNodes:initial.nodes,referenceMoves:state.moves,referenceSealPath:'passed',mistakeDeadlockAndRevive:deadlock?'passed':'not_applicable_tutorial'});console.log(`PASS ${level.id}/50: solver ${initial.nodes} nodes, ${level.batches.length} batches, ${deadlock?'mistake-deadlock+revive verified':'tutorial'}`);
+}
+fs.writeFileSync(new URL('../artifacts/campaign-verification.json',import.meta.url),JSON.stringify({levels:50,passed:records.length,records},null,2)+'\n');

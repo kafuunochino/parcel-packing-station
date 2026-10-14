@@ -1,11 +1,11 @@
 {
   "appid": "tt8a23fc9e145a412a02",
   "projectname": "快递收纳站",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "files": {
-    "game.js": "05626c908d6d0de73308a7264ed3025b6ca891c1552021384fa5b5acc2681a5c",
+    "game.js": "e976b41ba7ea7a26ae8d70a844c0a95646aafc918ad7542afbabc03f2d354d6b",
     "game.json": "d1180a9a99f80b72cf2d44013d0462a6824f355b12c0ae7bddb3ced53cb584ce",
-    "project.config.json": "c2c292d6359d3dfa14f25a917bb21c4404db7ac63a60df40c53e5c535527aa2f",
+    "project.config.json": "f4a90e35e1809437e85b267bc7c2876dddf36550943f8df5befe0b7621362d2f",
     "assets/tap.wav": "aa25d5d26dfc7de44fb6cd866d8715d89c97cec04c6e3f3ffcb0acc0e93df72c",
     "assets/place.wav": "ef3e1cbb73b4bf888f49d7136e855e69f09bf01dd14bcb5ecc313b3239809b37",
     "assets/squeeze.wav": "edfa8fec5203bb7c08a3eedaa0d733a649846a787997220b24a7e47afd895af7",

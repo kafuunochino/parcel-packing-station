@@ -1,0 +1,55 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> parcel-packing-station@0.3.0 verify
+> node scripts/verify-campaign.mjs
+
+PASS 1/50: solver 3 nodes, 1 batches, tutorial
+PASS 2/50: solver 4 nodes, 1 batches, tutorial
+PASS 3/50: solver 14 nodes, 1 batches, tutorial
+PASS 4/50: solver 5 nodes, 1 batches, tutorial
+PASS 5/50: solver 11 nodes, 1 batches, tutorial
+PASS 6/50: solver 49 nodes, 1 batches, tutorial
+PASS 7/50: solver 15 nodes, 1 batches, tutorial
+PASS 8/50: solver 55 nodes, 1 batches, tutorial
+PASS 9/50: solver 430 nodes, 1 batches, tutorial
+PASS 10/50: solver 14 nodes, 1 batches, tutorial
+PASS 11/50: solver 5 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 12/50: solver 5 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 13/50: solver 11 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 14/50: solver 18 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 15/50: solver 15 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 16/50: solver 7 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 17/50: solver 55 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 18/50: solver 50 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 19/50: solver 9 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 20/50: solver 6 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 21/50: solver 6 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 22/50: solver 320 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 23/50: solver 6 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 24/50: solver 9 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 25/50: solver 11 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 26/50: solver 85 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 27/50: solver 36 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 28/50: solver 16 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 29/50: solver 20 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 30/50: solver 10 nodes, 2 batches, mistake-deadlock+revive verified
+PASS 31/50: solver 102 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 32/50: solver 14 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 33/50: solver 13 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 34/50: solver 308 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 35/50: solver 17 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 36/50: solver 16 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 37/50: solver 46 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 38/50: solver 87 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 39/50: solver 8 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 40/50: solver 75 nodes, 3 batches, mistake-deadlock+revive verified
+PASS 41/50: solver 53 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 42/50: solver 106 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 43/50: solver 97 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 44/50: solver 534 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 45/50: solver 14 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 46/50: solver 153 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 47/50: solver 10 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 48/50: solver 19 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 49/50: solver 27 nodes, 4 batches, mistake-deadlock+revive verified
+PASS 50/50: solver 176 nodes, 4 batches, mistake-deadlock+revive verified

@@ -1,15 +1,16 @@
 {
   "name": "parcel-packing-station",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "快递收纳站：Canvas2D 软包压缩装箱解谜 Demo",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node --test test/rules.test.js test/storage.test.js test/runtime.test.js test/browser-adapter.test.js test/build.test.js test/sidebar.test.js",
-    "verify": "node scripts/verify-levels.mjs",
+    "test": "node --test test/rules.test.js test/storage.test.js test/runtime.test.js test/browser-adapter.test.js test/build.test.js test/sidebar.test.js test/campaign.test.js",
+    "verify": "node scripts/verify-campaign.mjs",
     "build": "node scripts/build.mjs",
-    "test:runtime-proof": "node qa/runtime-validation/scripts/build.mjs && node --test qa/runtime-validation/test/runtime.test.js"
+    "test:runtime-proof": "node qa/runtime-validation/scripts/build.mjs && node --test qa/runtime-validation/test/runtime.test.js",
+    "verify:legacy": "node scripts/verify-levels.mjs"
   },
   "engines": {
     "node": ">=20"

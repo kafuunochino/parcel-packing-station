@@ -1,0 +1,21 @@
+{
+  "renderer": "exact standalone HTML with @napi-rs/canvas and real Noto CJK fonts; not browser or phone",
+  "viewport": {
+    "width": 320,
+    "height": 568,
+    "safeTop": 72,
+    "safeBottom": 12,
+    "dpr": 2
+  },
+  "geometry": "all visited hit targets >=44 CSS px and inside safe area",
+  "checks": [
+    "all50 exact HTML pointer replays including every seal",
+    "1000 earned once minus10 spent, balance990",
+    "first-clear coins",
+    "wrong-seal deadlock",
+    "explicit mock cancellation no reward",
+    "paid revival restores meaningful state",
+    "level50 navigation",
+    "no runtime network"
+  ]
+}

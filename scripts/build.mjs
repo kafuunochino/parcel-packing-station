@@ -12,9 +12,13 @@ const appid=process.env.DOUYIN_APP_ID===undefined?config.appid:process.env.DOUYI
 if(appid!==''&&!/^tt[a-zA-Z0-9]{8,64}$/.test(appid))throw Error('Invalid DOUYIN_APP_ID override');
 const graph=[
  ['src/rules.js',[],['normalizeShape','rotateShape','shapeKey','getPiece','getShape','createState','occupiedCells','canPlace','applyAction','isWin','remainingCells','restoreState']],
- ['src/levels.js',["import {normalizeShape,rotateShape,shapeKey} from './rules.js';"],['LEVELS','getLevel']],
- ['src/storage.js',["import {LEVELS,getLevel} from './levels.js';","import {createState,restoreState} from './rules.js';"],['SAVE_KEY','SAVE_VERSION','freshSave','loadSave','writeSave']],
- ['src/game.js',["import {LEVELS,getLevel} from './levels.js';","import {createState,applyAction,getShape,occupiedCells,canPlace,isWin,remainingCells} from './rules.js';","import {loadSave,writeSave} from './storage.js';"],['startGame']]
+ ['src/campaign-designs.js',[],['CAMPAIGN_DESIGNS']],
+ ['src/levels.js',["import {normalizeShape,rotateShape,shapeKey} from './rules.js';","import {CAMPAIGN_DESIGNS} from './campaign-designs.js';"],['LEVELS','getLevel']],
+ ['src/campaign-rules.js',["import {createState,applyAction,getShape,canPlace,isWin,restoreState} from './rules.js';"],['currentBatch','createCampaignState','canSeal','findCompletion','applyCampaignAction','campaignWin','restoreCampaignState']],
+ ['src/economy.js',["import {currentBatch,canSeal,findCompletion,applyCampaignAction} from './campaign-rules.js';"],['TOOL_PRICES','awardClear','useBenefit','purchaseBenefit']],
+ ['src/rewards.js',[],['createMockRewards','createDisabledRewards']],
+ ['src/storage.js',["import {LEVELS,getLevel} from './levels.js';","import {createCampaignState,restoreCampaignState} from './campaign-rules.js';"],['SAVE_KEY','SAVE_VERSION','freshSave','loadSave','writeSave']],
+ ['src/game.js',["import {LEVELS,getLevel} from './levels.js';","import {getShape,occupiedCells,canPlace,remainingCells} from './rules.js';","import {createCampaignState,applyCampaignAction,campaignWin,currentBatch,canSeal} from './campaign-rules.js';","import {awardClear,purchaseBenefit,useBenefit} from './economy.js';","import {createDisabledRewards} from './rewards.js';","import {loadSave,writeSave} from './storage.js';"],['startGame']]
 ];
 const declared=new Set();
 async function auditedModule(file,imports,exports){
@@ -30,8 +34,8 @@ async function auditedModule(file,imports,exports){
 }
 const core=(await Promise.all(graph.map(args=>auditedModule(...args)))).join('\n');
 const sidebar=await auditedModule('platforms/douyin-sidebar.js',[],['createDouyinSidebar']);
-const tt=await auditedModule('platforms/tt.js',["import {createDouyinSidebar} from './douyin-sidebar.js';"],['createTTPlatform']);
-const browser=await auditedModule('platforms/browser-adapter.js',[],['createBrowserPlatform']);
+const tt=await auditedModule('platforms/tt.js',["import {createDouyinSidebar} from './douyin-sidebar.js';","import {createDisabledRewards} from '../src/rewards.js';"],['createTTPlatform']);
+const browser=await auditedModule('platforms/browser-adapter.js',["import {createMockRewards} from '../src/rewards.js';"],['createBrowserPlatform']);
 const names=['tap','place','squeeze','error','win'];
 const out=path.join(root,'dist');await mkdir(path.join(out,'douyin/assets'),{recursive:true});
 const audio=Object.fromEntries(names.map(name=>[name,`assets/${name}.wav`]));

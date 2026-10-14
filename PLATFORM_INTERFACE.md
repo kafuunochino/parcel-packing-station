@@ -14,6 +14,7 @@ platform = {
   cancelFrame: frameId => {},
   storage: { getItem: key => stringOrNull, setItem: (key, string) => {} },
   audio: { play: name => {}, setMuted: boolean => {} },
+  rewards, // optional: getState, request, cancel, destroy
   sidebar // optional: getState, subscribe, navigate, destroy
 };
 // Pointer: {type:'down'|'move'|'up'|'cancel', x, y, id}
@@ -40,3 +41,11 @@ platform = {
 platform.sidebar由tt适配器拥有，游戏只订阅状态，在玩家明确点击时调用navigate。状态包含available、checked、pending、enteredFromSidebar、error。只有最新onShow来源匹配时才确认复访，不发奖励，不因导航success伪造返回。
 
 接口和模拟测试不代表抖音官方工具、手机或微信兼容性验证。
+
+## 0.3.0 奖励预留与存档
+
+`platform.rewards.getState()` 返回 mode、available、busy；`request({placement,context})` 返回Promise，结果包含 status（completed/cancelled/unavailable/error）和唯一requestId；cancel/destroy幂等。浏览器 `createMockRewards` 只有人工 `completeMock(status)` 能完成，不会自行判定看完。可注入计时器，仅用于超时错误；旧计时器不能结算新请求。TT注入 `createDisabledRewards`，无真实SDK广告或广告单元。
+
+业务层捕获开局token、levelId、stage和失败状态，完成时逐项匹配且requestId只能使用一次。奖励真正可用才改变状态；关闭、换关、重开、销毁使旧请求失效。宿主onHide只暂停绘制和输入，不把潜在广告前后台当成完成或直接取消。当前没有live实现，不能把完成按钮当真实广告测试。
+
+存档version2保留原save:v1键兼容旧用户。旧version1已完成关卡每关迁移20金币且同步记入awardedLevels，持久化后不再补发。只保存合法批次、几何、一次拆签快照和每局有限道具状态；撤回历史不持久化。金币无充值、现实货币价值或云端保证。

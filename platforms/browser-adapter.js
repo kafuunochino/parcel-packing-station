@@ -1,7 +1,9 @@
+import {createMockRewards} from '../src/rewards.js';
 // DOM access is isolated to this browser adapter. Not shipped in the tt build.
 export function createBrowserPlatform(canvas, host = window, audioPaths = {}) {
   const listeners = { pointer: new Set(), resize: new Set(), pause: new Set(), resume: new Set() };
   const removers = [];
+  const rewards=createMockRewards(typeof host.setTimeout==='function'?{timers:{setTimeout:(fn,ms)=>host.setTimeout(fn,ms),clearTimeout:id=>host.clearTimeout(id)}}:{});
   const emit = (name, value) => listeners[name].forEach(fn => fn(value));
   const subscribe = name => fn => { listeners[name].add(fn); return () => listeners[name].delete(fn); };
   const listen = (target, name, fn) => { target.addEventListener(name, fn); removers.push(() => target.removeEventListener(name, fn)); };
@@ -46,11 +48,11 @@ export function createBrowserPlatform(canvas, host = window, audioPaths = {}) {
     else { resize(); emit('resume'); }
   });
   return {
-    canvas, getSize: () => ({ ...size }),
+    canvas, rewards, getSize: () => ({ ...size }),
     onPointer: subscribe('pointer'), onResize: subscribe('resize'), onPause: subscribe('pause'), onResume: subscribe('resume'),
     requestFrame: fn => host.requestAnimationFrame(fn), cancelFrame: id => host.cancelAnimationFrame(id),
     storage: { getItem: key => host.localStorage.getItem(key), setItem: (key, value) => host.localStorage.setItem(key, value) },
     audio,
-    destroy() { removers.forEach(fn => fn()); sounds.forEach(sound => sound.pause()); Object.values(listeners).forEach(set => set.clear()); }
+    destroy() { rewards.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => sound.pause()); Object.values(listeners).forEach(set => set.clear()); }
   };
 }

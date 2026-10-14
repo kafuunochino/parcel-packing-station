@@ -1,0 +1,506 @@
+{
+  "levels": 50,
+  "passed": 50,
+  "records": [
+    {
+      "id": 1,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 2,
+      "initialSolverNodes": 3,
+      "referenceMoves": 2,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 2,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 3,
+      "initialSolverNodes": 4,
+      "referenceMoves": 6,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 3,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 4,
+      "initialSolverNodes": 14,
+      "referenceMoves": 6,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 4,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 4,
+      "initialSolverNodes": 5,
+      "referenceMoves": 5,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 5,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 4,
+      "initialSolverNodes": 11,
+      "referenceMoves": 8,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 6,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 5,
+      "initialSolverNodes": 49,
+      "referenceMoves": 10,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 7,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 6,
+      "initialSolverNodes": 15,
+      "referenceMoves": 13,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 8,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 6,
+      "initialSolverNodes": 55,
+      "referenceMoves": 15,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 9,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 8,
+      "initialSolverNodes": 430,
+      "referenceMoves": 16,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 10,
+      "chapter": 1,
+      "batches": 1,
+      "pieces": 9,
+      "initialSolverNodes": 14,
+      "referenceMoves": 18,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "not_applicable_tutorial"
+    },
+    {
+      "id": 11,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 4,
+      "initialSolverNodes": 5,
+      "referenceMoves": 6,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 12,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 4,
+      "initialSolverNodes": 5,
+      "referenceMoves": 9,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 13,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 11,
+      "referenceMoves": 10,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 14,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 18,
+      "referenceMoves": 10,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 15,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 15,
+      "referenceMoves": 13,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 16,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 7,
+      "referenceMoves": 12,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 17,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 6,
+      "initialSolverNodes": 55,
+      "referenceMoves": 12,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 18,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 6,
+      "initialSolverNodes": 50,
+      "referenceMoves": 11,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 19,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 6,
+      "initialSolverNodes": 9,
+      "referenceMoves": 11,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 20,
+      "chapter": 2,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 6,
+      "referenceMoves": 9,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 21,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 6,
+      "referenceMoves": 15,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 22,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 7,
+      "initialSolverNodes": 320,
+      "referenceMoves": 13,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 23,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 6,
+      "referenceMoves": 13,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 24,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 8,
+      "initialSolverNodes": 9,
+      "referenceMoves": 17,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 25,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 11,
+      "referenceMoves": 12,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 26,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 7,
+      "initialSolverNodes": 85,
+      "referenceMoves": 13,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 27,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 6,
+      "initialSolverNodes": 36,
+      "referenceMoves": 9,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 28,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 7,
+      "initialSolverNodes": 16,
+      "referenceMoves": 15,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 29,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 5,
+      "initialSolverNodes": 20,
+      "referenceMoves": 12,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 30,
+      "chapter": 3,
+      "batches": 2,
+      "pieces": 6,
+      "initialSolverNodes": 10,
+      "referenceMoves": 16,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 31,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 102,
+      "referenceMoves": 17,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 32,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 14,
+      "referenceMoves": 16,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 33,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 13,
+      "referenceMoves": 21,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 34,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 308,
+      "referenceMoves": 17,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 35,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 8,
+      "initialSolverNodes": 17,
+      "referenceMoves": 18,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 36,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 8,
+      "initialSolverNodes": 16,
+      "referenceMoves": 22,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 37,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 46,
+      "referenceMoves": 16,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 38,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 87,
+      "referenceMoves": 18,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 39,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 8,
+      "referenceMoves": 17,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 40,
+      "chapter": 4,
+      "batches": 3,
+      "pieces": 7,
+      "initialSolverNodes": 75,
+      "referenceMoves": 16,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 41,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 53,
+      "referenceMoves": 22,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 42,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 106,
+      "referenceMoves": 21,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 43,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 97,
+      "referenceMoves": 23,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 44,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 534,
+      "referenceMoves": 22,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 45,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 14,
+      "referenceMoves": 23,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 46,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 153,
+      "referenceMoves": 19,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 47,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 8,
+      "initialSolverNodes": 10,
+      "referenceMoves": 22,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 48,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 19,
+      "referenceMoves": 20,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 49,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 9,
+      "initialSolverNodes": 27,
+      "referenceMoves": 22,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    },
+    {
+      "id": 50,
+      "chapter": 5,
+      "batches": 4,
+      "pieces": 8,
+      "initialSolverNodes": 176,
+      "referenceMoves": 20,
+      "referenceSealPath": "passed",
+      "mistakeDeadlockAndRevive": "passed"
+    }
+  ]
+}
