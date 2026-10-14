@@ -1,0 +1,13 @@
+{
+  "name": "parcel-packing-station",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "type": "module",
+  "description": "软包挤挤站：原生 HTML/CSS/JS 装箱解谜测试版",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test",
+    "verify": "node scripts/verify-levels.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
