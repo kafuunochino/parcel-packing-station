@@ -20,7 +20,7 @@ function makeLevel(d) {
   const pieces=[],solution=[];
   let regular=0;
   for(const [id,cells] of groups) {
-    const soft=id===d.soft, original=normalizeShape(cells),turns=(regular+d.id)%4;
+    const soft=id===d.soft, original=normalizeShape(cells),turns=d.id===1?0:(regular+d.id)%4;
     const piece={id,name:soft?'云朵软包':labels[regular%labels.length],color:soft?'pink':colors[regular%colors.length],soft,
       shape:soft?[[0,0],[1,0],[0,1],[1,1]]:rotateShape(original,turns),
       ...(soft?{compressedShape:[[0,0],[1,0],[0,1]],startCompressed:!!d.startCompressed}:{})};

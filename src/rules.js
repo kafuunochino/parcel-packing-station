@@ -38,7 +38,7 @@ export function canPlace(level,state,id,x,y,form = state.forms[id]) {
   }
   return {ok:true,reason:''};
 }
-const snapshot = state => ({levelId:state.levelId, placements:structuredClone(state.placements), forms:structuredClone(state.forms), moves:state.moves});
+const snapshot = state => ({levelId:state.levelId, placements:Object.fromEntries(Object.entries(state.placements).map(([id,at])=>[id,{...at}])), forms:Object.fromEntries(Object.entries(state.forms).map(([id,form])=>[id,{...form}])), moves:state.moves});
 function commit(state,next) { return {...next,history:[...state.history,snapshot(state)].slice(-100),moves:state.moves+1}; }
 export function applyAction(level,state,action) {
   const fail = reason => ({ok:false,state,reason});
