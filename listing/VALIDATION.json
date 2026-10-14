@@ -1,0 +1,34 @@
+{
+  "validatedAtUTC": "2026-10-14T11:13:06.759366+00:00",
+  "status": "draft_ready_icon_exact_dimensions_pending",
+  "name": "快递收纳站",
+  "text": {
+    "introductionCharacters": 22,
+    "introductionHanCharacters": 19,
+    "introductionMaximum": 60,
+    "introductionPass": true,
+    "detailedDescriptionCharacters": 197,
+    "detailedDescriptionHanCharacters": 177,
+    "detailedDescriptionMinimum": 120,
+    "detailedDescriptionMaximum": 300,
+    "detailedDescriptionPass": true,
+    "detailedDescriptionHanCountAlsoPass": true
+  },
+  "icon": {
+    "file": "assets/icon-source-v1.png",
+    "format": "PNG",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 2102672,
+    "sha256": "8b7e7448d4145790bf0e5a45683bf796b194dbea00e273617f496a779406da48",
+    "square": true,
+    "under6MB": true,
+    "exact600By600": false,
+    "visuallyInspected": true,
+    "visuallyObservedNoOuterRoundedCorners": true,
+    "visuallyObservedNoWatermarkTextOrQRCode": true,
+    "submissionReady": false
+  },
+  "platformSubmitted": false,
+  "runtimeOrFrozenCandidateModifiedByThisTask": false
+}
