@@ -7,7 +7,10 @@
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test",
-    "verify": "node scripts/verify-levels.mjs"
+    "verify": "node scripts/verify-levels.mjs",
+    "build": "node scripts/build.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

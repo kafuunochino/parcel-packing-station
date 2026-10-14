@@ -37,6 +37,8 @@ export function createBrowserPlatform(canvas, host = window, audioPaths = {}) {
     },
     setMuted(value) { muted = Boolean(value); if (muted) sounds.forEach(sound => sound.pause()); }
   };
+  listen(host, 'pagehide', () => { sounds.forEach(sound => sound.pause()); emit('pause'); });
+  listen(host, 'pageshow', event => { if (event.persisted) { resize(); emit('resume'); } });
   listen(host.document, 'visibilitychange', () => {
     if (host.document.hidden) { sounds.forEach(sound => sound.pause()); emit('pause'); }
     else { resize(); emit('resume'); }
