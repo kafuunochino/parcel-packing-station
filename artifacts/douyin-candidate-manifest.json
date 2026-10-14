@@ -3,7 +3,7 @@
   "projectname": "快递收纳站",
   "version": "0.3.0",
   "files": {
-    "game.js": "e976b41ba7ea7a26ae8d70a844c0a95646aafc918ad7542afbabc03f2d354d6b",
+    "game.js": "0684203b5598fdd2a3de4fb33b26c0c3f05aac556709dbac818e3b599c39415d",
     "game.json": "d1180a9a99f80b72cf2d44013d0462a6824f355b12c0ae7bddb3ced53cb584ce",
     "project.config.json": "f4a90e35e1809437e85b267bc7c2876dddf36550943f8df5befe0b7621362d2f",
     "assets/tap.wav": "aa25d5d26dfc7de44fb6cd866d8715d89c97cec04c6e3f3ffcb0acc0e93df72c",

@@ -1,10 +1,11 @@
 {
+  "htmlSha256": "41a120fdb2a5efffd8f3494c2377aea25cb4a2d7dd26799720e698ec48ac397a",
   "renderer": "exact standalone HTML with @napi-rs/canvas and real Noto CJK fonts; not browser or phone",
   "viewport": {
     "width": 320,
     "height": 568,
-    "safeTop": 72,
-    "safeBottom": 12,
+    "safeTop": 92,
+    "safeBottom": 34,
     "dpr": 2
   },
   "geometry": "all visited hit targets >=44 CSS px and inside safe area",

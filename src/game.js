@@ -34,7 +34,7 @@ export function startGame(platform) {
  function dimensions(){
   size=platform.getSize();const safe={top:Math.max(0,Number(size.safeTop)||0),bottom:Math.max(0,Number(size.safeBottom)||0),left:Math.max(0,Number(size.safeLeft)||0),right:Math.max(0,Number(size.safeRight)||0)};
   const availableWidth=Math.max(1,size.width-safe.left-safe.right),W=Math.min(480,availableWidth),H=Math.max(1,size.height-safe.top-safe.bottom);
-  return {W,H,scale:1,ox:safe.left+(availableWidth-W)/2,oy:safe.top,safeInsets:safe,compact:W<304||H<482,board:null,footerY:H-54,trayY:H-122};
+  return {W,H,scale:1,ox:safe.left+(availableWidth-W)/2,oy:safe.top,safeInsets:safe,compact:W<304||H<426,tight:H<482,board:null,footerY:H-54,trayY:H-(H<482?66:122)};
  }
  function logical(event){const l=layout||dimensions();return {x:event.x-l.ox,y:event.y-l.oy};}
  function warehouse(){
@@ -43,14 +43,52 @@ export function startGame(platform) {
   poly([[size.width*.42,0],[size.width*.72,0],[size.width*.94,size.height],[size.width*.55,size.height]],'rgba(244,222,153,0.035)');
   for(let y=132;y<size.height;y+=176){rect(0,y,size.width,8,'#58624a');rect(0,y+8,size.width,4,'#20281f');}
  }
- function parcelShape(piece,form,x,y,cell,alpha=1){const cells=getShape(piece,form);ctx.globalAlpha=alpha;for(const [dx,dy]of cells){const px=x+dx*cell,py=y+dy*cell;rrect(px,py,cell-2,cell-2,piece.soft?5:2,C[piece.color],C.edge);if(piece.soft){ctx.save();if(typeof ctx.setLineDash==='function')ctx.setLineDash([3,2]);rrect(px+3,py+3,cell-8,cell-8,3,null,'#994e74');ctx.restore();}else rect(px+cell*.42,py+2,Math.max(2,cell*.14),cell-6,'rgba(255,245,214,0.42)');}ctx.globalAlpha=1;}
+ function cargo(piece){const names=['茶叶','香氛','陶杯','饼干','棉袜','木玩','旅行','文具'];const n=piece.soft?8:Math.max(0,['茶叶礼盒','香氛小样','陶瓷杯','手工饼干','棉袜套装','桌面摆件','旅行套装','文具礼盒'].indexOf(piece.name));return {name:piece.soft?'围巾':names[n],kind:n};}
+ function cargoIcon(piece,x,y,size){
+  const kind=cargo(piece).kind;ctx.save();ctx.translate(x,y);ctx.scale(size/32,size/32);const dark='#684e36',cream='#fff5dc';
+  if(kind===0){rrect(5,7,22,22,3,'#78966b',dark);rect(4,4,24,5,'#b7c49c');rrect(9,12,14,11,1,cream);poly([[13,19],[15,13],[21,14],[18,20]],'#6d8651');line(14,20,20,14,cream,1);}
+  else if(kind===1){rrect(7,12,18,17,4,'#d6ae6e',dark);rect(12,4,8,8,'#756348');rect(10,1,12,4,'#a78d61');rrect(11,17,10,8,1,cream);poly([[16,18],[20,21],[16,24],[12,21]],'#ba7962');}
+  else if(kind===2){rrect(4,9,19,20,4,'#efeee0',dark);ctx.beginPath();ctx.moveTo(23,12);ctx.quadraticCurveTo(35,10,29,22);ctx.lineTo(23,24);ctx.strokeStyle=dark;ctx.lineWidth=2;ctx.stroke();line(9,3,8,7,'#c39d72',2);line(15,0,14,5,'#c39d72',2);rect(8,17,11,3,'#88a8b1');}
+  else if(kind===3){rrect(3,5,26,24,7,'#c99656',dark);rrect(7,8,18,17,5,null,'#eec589');for(const [a,b]of [[11,12],[20,14],[14,20],[22,23],[7,20]])rrect(a,b,3,3,1,'#785037');}
+  else if(kind===4){poly([[7,3],[15,3],[15,21],[21,23],[21,29],[7,29],[4,24],[7,19]],'#ba756e');poly([[18,2],[26,2],[26,19],[30,22],[28,27],[17,25],[15,20],[18,16]],'#e4c19d');rect(7,5,8,4,cream);rect(18,4,8,4,cream);}
+  else if(kind===5){rrect(6,4,8,8,4,'#bd9567',dark);rrect(19,4,8,8,4,'#bd9567',dark);rrect(6,7,21,20,8,'#d4b288',dark);rect(11,14,2,3,dark);rect(21,14,2,3,dark);rrect(12,19,10,6,3,cream);rect(16,19,3,2,dark);}
+  else if(kind===6){rrect(11,1,10,8,2,null,dark);rrect(4,7,24,21,4,'#8b9c9f',dark);rect(10,8,3,19,'#dec9a3');rect(20,8,3,19,'#dec9a3');rect(7,28,4,3,dark);rect(23,28,4,3,dark);}
+  else if(kind===7){poly([[5,6],[20,3],[24,26],[9,29]],'#e4c986');line(10,7,14,27,'#9a7751',2);poly([[24,3],[28,4],[23,25],[19,29],[19,23]],'#bd7760');line(22,7,26,8,cream,2);}
+  else{poly([[5,3],[18,3],[18,15],[27,15],[27,25],[13,25],[10,13],[5,13]],'#ad6d7e');for(let i=0;i<4;i++){line(6+i*3,4,6+i*3,12,'#e7b8b8',1);line(15,17+i*2,26,17+i*2,'#e7b8b8',1);}for(let i=0;i<4;i++)line(16+i*3,24,16+i*3,29,'#ad6d7e',2);}
+  ctx.restore();
+ }
+ function parcelShape(piece,form,x,y,cell,alpha=1,options={}){
+  const cells=getShape(piece,form),has=new Set(cells.map(c=>c.join(','))),cols=Math.max(...cells.map(c=>c[0]))+1,rows=Math.max(...cells.map(c=>c[1]))+1,base=C[piece.color],tiny=cell<24,margin=tiny?.7:2;
+  ctx.save();ctx.globalAlpha=alpha;
+  for(const [dx,dy]of cells){const px=x+dx*cell,py=y+dy*cell;if(!has.has(`${dx},${dy+1}`))rect(px+margin,py+cell-1,cell-margin*2,4,'rgba(33,32,23,0.28)');if(!has.has(`${dx+1},${dy}`))rect(px+cell-1,py+margin,3,cell-margin*2,'rgba(33,32,23,0.2)');}
+  ctx.save();ctx.beginPath();for(const [dx,dy]of cells){const l=has.has(`${dx-1},${dy}`)?0:margin,t=has.has(`${dx},${dy-1}`)?0:margin,r=has.has(`${dx+1},${dy}`)?0:margin,b=has.has(`${dx},${dy+1}`)?0:margin;ctx.rect(x+dx*cell+l,y+dy*cell+t,cell-l-r,cell-t-b);}ctx.clip();
+  let surface=base;if(typeof ctx.createLinearGradient==='function'){surface=ctx.createLinearGradient(x,y,x+cols*cell,y+rows*cell);surface.addColorStop(0,base);surface.addColorStop(.55,base);surface.addColorStop(1,'#b29a76');}rect(x,y,cols*cell,rows*cell,surface);
+  if(!tiny){for(let yy=5;yy<rows*cell;yy+=8)line(x,y+yy,x+cols*cell,y+yy,piece.soft?'rgba(255,241,222,0.18)':'rgba(100,75,47,0.055)',1);for(let xx=7;xx<cols*cell;xx+=13)line(x+xx,y,x+xx-3,y+rows*cell,'rgba(255,243,218,0.09)',1);}
+  const tapeX=x+Math.floor(cols/2)*cell+(cols%2?cell*.48:0),tapeW=Math.max(3,cell*.18);rect(tapeX-tapeW/2,y,tapeW,rows*cell,piece.soft?'rgba(174,100,121,0.33)':'rgba(248,224,174,0.6)');line(tapeX-tapeW/2,y,tapeX-tapeW/2,y+rows*cell,'rgba(115,81,42,0.22)',1);line(tapeX+tapeW/2,y,tapeX+tapeW/2,y+rows*cell,'rgba(255,247,221,0.65)',1);
+  if(options.sealed){for(let yy=cell*.4;yy<rows*cell;yy+=cell*1.45){rect(x,y+yy,cols*cell,Math.max(7,cell*.15),'#e6c688');for(let xx=5;xx<cols*cell;xx+=45){text('封签',x+xx,y+yy+Math.max(7,cell*.11),Math.max(6,cell*.1),'#9d5140',700);}}}
+  ctx.restore();
+  for(const [dx,dy]of cells){const px=x+dx*cell,py=y+dy*cell;const stroke=options.selected?'#fff2b8':piece.soft?'#8f596c':'#806445',lw=options.selected?2:tiny?1:1.5;
+   if(piece.soft&&typeof ctx.setLineDash==='function')ctx.setLineDash(tiny?[]:[3,3]);
+   if(!has.has(`${dx},${dy-1}`)){line(px+margin,py+margin,px+cell-margin,py+margin,stroke,lw);if(!tiny)line(px+margin+1,py+5,px+cell-margin-1,py+5,'rgba(255,245,214,0.65)',2);}
+   if(!has.has(`${dx-1},${dy}`))line(px+margin,py+margin,px+margin,py+cell-margin,stroke,lw);
+   if(!has.has(`${dx},${dy+1}`)){line(px+margin,py+cell-margin,px+cell-margin,py+cell-margin,stroke,lw);if(!tiny)line(px+margin+1,py+cell-5,px+cell-margin-1,py+cell-5,'rgba(104,74,43,0.2)',3);}
+   if(!has.has(`${dx+1},${dy}`))line(px+cell-margin,py+margin,px+cell-margin,py+cell-margin,stroke,lw);
+   if(typeof ctx.setLineDash==='function')ctx.setLineDash([]);
+   if(!tiny&&!has.has(`${dx+1},${dy}`)&&!has.has(`${dx},${dy-1}`)){poly([[px+cell-15,py+3],[px+cell-3,py+3],[px+cell-3,py+15]],piece.soft?'#c48c9e':'#d5ba8b');line(px+cell-15,py+3,px+cell-3,py+15,'rgba(105,76,45,0.4)',1);}
+  }
+  const first=cells[0],px=x+first[0]*cell,py=y+first[1]*cell;
+  if(tiny){cargoIcon(piece,px+cell*.13,py+cell*.12,cell*.74);}else{
+   const label=Math.min(cell-12,58),lx=px+(cell-label)/2,ly=py+(cell-label)/2;ctx.save();ctx.translate(lx+label/2,ly+label/2);ctx.rotate(piece.soft?-.055:.025);rect(-label/2+1,-label/2+2,label,label,'rgba(56,40,23,0.14)');rrect(-label/2,-label/2,label,label,2,'#fff2d4','#d4bd8f');cargoIcon(piece,-label*.32,-label*.36,label*.64);barcode(-label*.31,label*.28,label*.62,Math.max(3,label*.08),'#785e42');text(cargo(piece).name,0,label*.23,Math.max(7,Math.min(10,label*.2)),C.edge,700,'center');ctx.restore();
+   const tag=Math.max(13,Math.min(20,cell*.25));rrect(px+3,py+3,tag,tag,2,options.selected?C.orange:'#e4ceb0','#7c6246');text(piece.id,px+3+tag/2,py+3+tag*.78,Math.max(9,tag*.67),C.ink,700,'center');
+  }ctx.restore();
+ }
  function boxArt(x,y,w,h){rect(x+8,y+10,w,h,'#20261f');poly([[x,y],[x+w*.82,y],[x+w,y+18],[x+w,y+h],[x,y+h]],C.kraft);rect(x+8,y+9,w-16,h-17,'#a9753d');rect(x+14,y+15,w-28,h-29,'#ead5a8');poly([[x,y],[x+16,y-12],[x+w-12,y-12],[x+w*.82,y]],'#ddaf73');poly([[x+w*.82,y],[x+w,y+18],[x+w,y+h],[x+w-12,y+h-8],[x+w-12,y+20]],'#a87942');for(let i=0;i<9;i++)line(x+15,y+20+i*(h-32)/9,x+w-20,y+19+i*(h-32)/9,'rgba(126,91,47,0.07)');rect(x+w*.43,y,20,h,'rgba(249,222,166,0.5)');barcode(x+w-64,y+h-32,40,16,C.edge);}
  function drawHome(){
   const {W,H}=layout,pad=20;
   rect(pad,20,84,22,C.orange);text('PACK / 50',pad+9,36,12,C.ink,700);text(`${save.coins} 金币`,W-pad,36,13,C.orange,700,'right');
   text('快递收纳站',pad,86,Math.min(40,W*.102),C.paper,800);text('留好下一批的位置，再落下封签。',pad,114,Math.min(14,(W-40)/18),'#c8d1b7');
-  const y=148,artH=Math.min(240,Math.max(76,H-428)),artW=Math.min(W-64,300);boxArt((W-artW)/2,y,artW,Math.max(76,artH));
-  const demo=LEVELS[4],soft=demo.pieces.find(p=>p.soft);parcelShape(soft,{rotation:0,compressed:true},W/2-25,y+18,Math.max(24,Math.min(50,artH*.32)));text('本地工位 / 无需赶时间',W/2,y+Math.max(76,artH)+34,12,C.muted,400,'center');
+  const y=layout.tight?132:148,minArt=layout.tight?50:76,artH=Math.min(240,Math.max(minArt,H-428)),artW=Math.min(W-64,300);boxArt((W-artW)/2,y,artW,Math.max(minArt,artH));
+  const demo=LEVELS[4],soft=demo.pieces.find(p=>p.soft);parcelShape(soft,{rotation:0,compressed:true},W/2-25,y+18,Math.max(layout.tight?16:24,Math.min(50,artH*.32)));text('本地工位 / 无需赶时间',W/2,y+Math.max(minArt,artH)+34,12,C.muted,400,'center');
   const startY=H-216;button('play',state.moves?'继续装箱':'开始装箱',pad,startY,W-pad*2,52,{fill:C.orange,font:18,tag:true});
   const half=(W-pad*2-10)/2;button('levels','关卡货架',pad,startY+62,half,48);button('help','装箱说明',pad+half+10,startY+62,half,48);button('settings','工位设置',pad,startY+120,W-pad*2,48);
   text(`${save.completed.length} / 50 箱已出库 · ${saveOK?'进度保存在此设备':'此设备无法存档'}`,W/2,H-16,11,C.muted,400,'center');
@@ -58,7 +96,7 @@ export function startGame(platform) {
  function drawCompact(){const {W,H}=layout;text('竖起手机，打开工位',W/2,Math.max(80,H*.3),20,C.paper,700,'center');wrap('请使用竖屏或放大窗口。装箱进度已保留，按钮不会被缩成小图标。',24,Math.max(110,H*.3+36),W-48,14,C.muted,23,4);button('home','返回仓库',24,H-70,W-48,48);}
  function drawPlay(){
   const {W,H,trayY,footerY}=layout;
-  button('menu','菜单',10,4,52,44,{fill:'#d3ba88'});button('help','说明',W-62,4,52,44,{fill:'#d3ba88'});
+  button('menu','菜单',10,4,52,44,{fill:'#d3ba88'});button(layout.tight?'rack':'help',layout.tight?'货架':'说明',W-62,4,52,44,{fill:'#d3ba88'});
   if(state.status==='failed')button('showFailure','这箱卡住了',W/2-66,4,132,44,{fill:'#e3a38c'});else if(campaignWin(level,state))button('showWin','出库单',W/2-66,4,132,44,{fill:C.orange});else if(level.batches.length>1)button('manifest',canSeal(level,state)?'本批已齐 · 待封签':`货单 · 第${state.stage+1}/${level.batches.length}批`,W/2-84,4,168,44,{font:12,fill:canSeal(level,state)?C.orange:C.paper});else{text(`${String(level.id).padStart(2,'0')} 号装箱工位`,W/2,25,16,C.paper,700,'center');const chosen=level.pieces.find(p=>p.id===selected);text(chosen?`${chosen.id} ${chosen.name}${chosen.soft?(state.forms[chosen.id].compressed?' · 三格':' · 四格'):''}`:'点击包裹 · 对齐左上角',W/2,43,10,C.muted,400,'center');}
   text(`装入 ${Object.keys(state.placements).length}/${level.pieces.length}`,14,70,12,C.paper,700);text(`空格 ${remainingCells(level,state)}`,W/2,70,12,C.paper,700,'center');text(`${state.moves} 步`,W-14,70,12,C.paper,700,'right');
   const cell=Math.min((W-40)/level.width,(trayY-96)/level.height,88),bw=cell*level.width,bh=cell*level.height,bx=(W-bw)/2,by=84+((trayY-96)-bh)/2;
@@ -67,26 +105,27 @@ export function startGame(platform) {
   if(drag&&drag.moved&&selected){const p=boardPoint(drag.current,drag.anchor);if(p)preview={...p,...canPlace(level,state,selected,p.x,p.y)};}
   const previewCells=new Set();if(preview){const piece=level.pieces.find(p=>p.id===selected);getShape(piece,state.forms[selected]).forEach(([x,y])=>previewCells.add(`${x+preview.x},${y+preview.y}`));}
   for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){
-   const key=`${x},${y}`,id=occupied.get(key),piece=level.pieces.find(p=>p.id===id),px=bx+x*cell+1.5,py=by+y*cell+1.5+(piece&&animation&&animation.pieceId===id&&['place','compress','rotate'].includes(animation.kind)&&Date.now()<animation.until?-Math.sin(Math.min(1,(Date.now()-animation.started)/(animation.until-animation.started))*Math.PI)*7:0),edge=cell-3;
-   rrect(px,py,edge,edge,piece&&piece.soft?5:2,piece?C[piece.color]:blocked.has(key)?'#9d8158':'#e4cba1','#b18755');
+   const key=`${x},${y}`,px=bx+x*cell+1.5,py=by+y*cell+1.5,edge=cell-3;
+   rrect(px,py,edge,edge,2,blocked.has(key)?'#9d8158':'#e4cba1','#b18755');
    if(blocked.has(key)){ctx.save();ctx.beginPath();ctx.rect(px,py,edge,edge);ctx.clip();for(let a=-edge;a<edge*2;a+=10)line(px+a,py,px+a+edge,py+edge,'#645a3e',3);ctx.restore();}
-   if(piece){rect(px-1.5,py-1.5,cell,cell,C[piece.color]);const cellKey=(dx,dy)=>occupied.get(`${x+dx},${y+dy}`)===id;if(!cellKey(0,-1))line(px,py,px+edge,py,'rgba(255,251,220,0.7)',2);if(!cellKey(-1,0))line(px,py,px,py+edge,'rgba(255,251,220,0.45)',2);if(!cellKey(0,1))line(px,py+edge,px+edge,py+edge,C.edge,2);if(!cellKey(1,0))line(px+edge,py,px+edge,py+edge,C.edge,2);if(piece.soft){ctx.save();if(typeof ctx.setLineDash==='function')ctx.setLineDash([4,3]);rrect(px+3,py+3,edge-6,edge-6,5,null,'#994e74');ctx.restore();}else rect(px+edge*.43,py+2,edge*.13,edge-4,'rgba(255,245,214,0.42)');if(id===selected){rrect(px+2,py+2,edge-4,edge-4,2,null,C.ink);rrect(px+3,py+3,edge-6,edge-6,2,null,C.ink);}const first=getShape(piece,state.forms[id])[0],at=state.placements[id];if(x===at.x+first[0]&&y===at.y+first[1]){rect(px+5,py+5,20,21,C.paper);text(id,px+15,py+21,13,C.ink,700,'center');}}
-   if(piece&&state.sealed.includes(id)){rect(px,py+edge*.46,edge,8,'rgba(244,219,156,0.9)');if((x+y)%2===0)text('封',px+edge/2,py+edge*.46+8,8,C.red,700,'center');}
-   if(state.clue&&state.clue.pieceId===selected){const cp=level.pieces.find(p=>p.id===state.clue.pieceId);if(getShape(cp,state.clue).some(([dx,dy])=>state.clue.x+dx===x&&state.clue.y+dy===y)){rrect(px+4,py+4,edge-8,edge-8,2,null,'#235b9b');}}
+  }
+  for(const piece of level.pieces){const at=state.placements[piece.id];if(!at)continue;const bounce=animation&&animation.pieceId===piece.id&&['place','compress','rotate'].includes(animation.kind)&&Date.now()<animation.until?-Math.sin(Math.min(1,(Date.now()-animation.started)/(animation.until-animation.started))*Math.PI)*7:0;parcelShape(piece,state.forms[piece.id],bx+at.x*cell,by+at.y*cell+bounce,cell,1,{selected:selected===piece.id,sealed:state.sealed.includes(piece.id)});}
+  for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){const key=`${x},${y}`,px=bx+x*cell+1.5,py=by+y*cell+1.5,edge=cell-3;
+   if(state.clue&&state.clue.pieceId===selected){const cp=level.pieces.find(p=>p.id===state.clue.pieceId);if(getShape(cp,state.clue).some(([dx,dy])=>state.clue.x+dx===x&&state.clue.y+dy===y))rrect(px+4,py+4,edge-8,edge-8,2,null,'#235b9b');}
    if(previewCells.has(key)){ctx.globalAlpha=.55;rect(px,py,edge,edge,preview.ok?'#73b473':'#d36153');ctx.globalAlpha=1;}
   }
   // One accessible row of parcels. Pagination preserves 44px targets on 320px phones.
-  const pages=Math.ceil(level.pieces.length/3),gap=5,side=44,cardW=(W-20-side*2-gap*4)/3;
+  if(!layout.tight){const pages=Math.ceil(level.pieces.length/3),gap=5,side=44,cardW=(W-20-side*2-gap*4)/3;
   rect(8,trayY-7,W-16,68,'#546148');button('trayPrev','‹',10,trayY,side,56,{disabled:trayPage===0,font:24,fill:'#b8bc94'});
-  level.pieces.slice(trayPage*3,trayPage*3+3).forEach((piece,i)=>{const x=10+side+gap+i*(cardW+gap),y=trayY,placed=!!state.placements[piece.id],chosen=selected===piece.id,available=currentBatch(level,state).includes(piece.id)&&!state.sealed.includes(piece.id),batch=level.batches.findIndex(b=>b.includes(piece.id))+1;rect(x+1,y+3,cardW,56,C.ink);rrect(x,y,cardW,56,2,chosen?C.orange:!available?'#cec9b5':piece.soft?'#f1c2d3':C.paper,chosen?C.orange:C.edge);const cells=getShape(piece,state.forms[piece.id]),cols=Math.max(...cells.map(c=>c[0]))+1,rows=Math.max(...cells.map(c=>c[1]))+1,pc=Math.min(12,(cardW-12)/cols,30/rows);parcelShape(piece,state.forms[piece.id],x+(cardW-cols*pc)/2,y+5+(30-rows*pc)/2,pc,placed ? .45 : 1);text(`${piece.id}${level.batches.length>1?'·'+batch+'批':piece.soft?' 软包':''}${placed?' ✓':''}`,x+cardW/2,y+48,11,C.ink,700,'center');targets.push({id:'piece',pieceId:piece.id,label:`包裹 ${piece.id}`,x,y,w:cardW,h:56,disabled:false});});
-  button('trayNext','›',W-54,trayY,side,56,{disabled:trayPage>=pages-1,font:24,fill:'#b8bc94'});
+  level.pieces.slice(trayPage*3,trayPage*3+3).forEach((piece,i)=>{const x=10+side+gap+i*(cardW+gap),y=trayY,placed=!!state.placements[piece.id],chosen=selected===piece.id,available=currentBatch(level,state).includes(piece.id)&&!state.sealed.includes(piece.id),batch=level.batches.findIndex(b=>b.includes(piece.id))+1;rect(x+1,y+3,cardW,56,C.ink);rrect(x,y,cardW,56,2,chosen?C.orange:!available?'#cec9b5':piece.soft?'#f1c2d3':C.paper,chosen?C.orange:C.edge);const cells=getShape(piece,state.forms[piece.id]),cols=Math.max(...cells.map(c=>c[0]))+1,rows=Math.max(...cells.map(c=>c[1]))+1,pc=Math.min(12,(cardW-12)/cols,30/rows);parcelShape(piece,state.forms[piece.id],x+(cardW-cols*pc)/2,y+5+(30-rows*pc)/2,pc,placed ? .45 : 1);text(`${piece.id} ${cargo(piece).name}${placed?'✓':''}`,x+cardW/2,y+45,10,C.ink,700,'center');if(level.batches.length>1)text(`第${batch}批${state.sealed.includes(piece.id)?' · 已封':''}`,x+cardW/2,y+54,8,C.edge,700,'center');targets.push({id:'piece',pieceId:piece.id,label:`包裹 ${piece.id}`,x,y,w:cardW,h:56,disabled:false});});
+  button('trayNext','›',W-54,trayY,side,56,{disabled:trayPage>=pages-1,font:24,fill:'#b8bc94'});}
   const piece=level.pieces.find(p=>p.id===selected),w=(W-20-18)/4,soft=!!(piece&&piece.soft),editable=!!piece&&state.status!=='failed'&&currentBatch(level,state).includes(piece.id)&&!state.sealed.includes(piece.id);
   button('rotate','旋转',10,footerY,w,48,{disabled:!editable,fill:C.orange});button('compress',soft?(state.forms[selected].compressed?'展开':'压缩'):'软包',10+w+6,footerY,w,48,{disabled:!soft||!editable,fill:'#e7a5be'});button('remove','取出',10+(w+6)*2,footerY,w,48,{disabled:!editable||!state.placements[selected]});button('undo','撤回',10+(w+6)*3,footerY,w,48,{disabled:state.status==='failed'||!state.history.length});
  }
  function modalHeader(title){const {W,H}=layout;rect(4,4,W-8,H-8,C.paper);rect(4,4,W-8,7,C.kraft);barcode(20,22,45,17);text('PACKING RECORD',74,35,10,C.edge,700);button('close','返回',W-70,18,50,44,{fill:'#dfc99e'});text(title,20,88,24,C.ink,800);line(20,103,W-20,103,'#bca77e');targets=targets.filter(t=>t.id==='close');}
  function drawModal(){
   const {W,H}=layout;targets=[];ctx.fillStyle='rgba(20,25,19,0.8)';ctx.fillRect(0,0,W,H);
-  const titles={menu:'工位运单夹',levels:'关卡货架',help:'装箱说明',settings:'工位设置',hint:'参考装箱图',restart:'重新装这一箱？',win:'出库成功',sidebarInfo:'侧边栏复访',briefing:'今日交接',manifest:'完整货单',failure:'这箱卡住了',tools:'工位工具箱',rewardMock:'模拟广告',benefit:'工具回执'};
+  const titles={menu:'工位运单夹',levels:'关卡货架',help:'装箱说明',settings:'工位设置',hint:'参考装箱图',restart:'重新装这一箱？',win:'出库成功',sidebarInfo:'侧边栏复访',briefing:'今日交接',manifest:'完整货单',failure:'这箱卡住了',tools:'工位工具箱',rewardMock:'模拟广告',benefit:'工具回执',rack:'包裹货架'};
   modalHeader(titles[modal]||'运单');
   if(modal==='menu'){
    const y=120,w=(W-50)/2;button('play','继续装箱',20,y,W-40,48,{fill:C.orange});
@@ -94,7 +133,7 @@ export function startGame(platform) {
    wrap(level.title+'。'+level.hint,20,H-70,W-40,12,C.edge,19,3);
   }else if(modal==='levels'){
    const names=['旧仓新手','早班接货','雨天隔板','夜班接力','最后一车'];text(`第${levelsPage+1}章 · ${names[levelsPage]}`,20,126,14,C.edge,700);const w=(W-50)/2,h=44;
-   LEVELS.slice(levelsPage*10,levelsPage*10+10).forEach((item,i)=>{const x=20+(i%2)*(w+10),y=141+Math.floor(i/2)*49;button(`level:${item.id}`,`${String(item.id).padStart(2,'0')}  ${save.completed.includes(item.id)?'已出库':item.batches.length>1?item.batches.length+'批交接':'练习箱'}`,x,y,w,h,{fill:level.id===item.id?C.orange:C.paper,font:13});});
+   LEVELS.slice(levelsPage*10,levelsPage*10+10).forEach((item,i)=>{const x=20+(i%2)*(w+10),y=(layout.tight?132:141)+Math.floor(i/2)*(layout.tight?46:49);button(`level:${item.id}`,`${String(item.id).padStart(2,'0')}  ${save.completed.includes(item.id)?'已出库':item.batches.length>1?item.batches.length+'批交接':'练习箱'}`,x,y,w,h,{fill:level.id===item.id?C.orange:C.paper,font:13});});
    button('levelsPrev','上一章',20,H-74,(W-50)/2,44,{disabled:levelsPage===0});button('levelsNext','下一章',30+(W-50)/2,H-74,(W-50)/2,44,{disabled:levelsPage===4});text('换关替换当前摆放；金币与通关记录保留',W/2,H-15,10,C.edge,400,'center');
   }else if(modal==='help'){
    const pages=[['选包裹，放进箱子','先点货架上的包裹，再点箱内格子。以形状左上角对齐，也可以拖动放下。'],['转个方向，再试一次','选中包裹后点「旋转」。已放入的包裹也能旋转、挪动或取出。'],['粉色软包会挤也会松','软包可在四格方形和三格L形间切换。压缩或展开后仍可以旋转。'],['全部装入，填满空格','所有包裹都要放进箱子，除隔板外不能留空。前十关可自由撤回。'],['封签前，先看下一批','第十一关起分批到货。所有轮廓从一开始就能看；封签锁住本批，留错形状会卡住。始终可以免费重开。']];
@@ -112,15 +151,18 @@ export function startGame(platform) {
   }else if(modal==='restart'){
    wrap('当前摆放、操作步数和撤回历史会清空。已经通关的记录会保留。',22,152,W-44,16,C.ink,27,5);const w=(W-50)/2;button('close','接着装',20,H-86,w,52);button('confirmRestart','重新装箱',30+w,H-86,w,52,{fill:C.orange});
   }else if(modal==='win'){
-   rect(22,126,W-44,70,'#e9d8ad');text(save.completed.length===LEVELS.length?'五十箱心意，都送达了！':'刚刚好，出库啦！',W/2,156,20,C.ink,800,'center');text(`${state.moves} 次操作 / ${save.completed.length} 箱已出库`,W/2,181,14,C.edge,400,'center');barcode(34,214,W-68,24);text(earned?`首次出库 +${earned} 金币 · 余额${save.coins}`:`本关已领过金币 · 余额${save.coins}`,W/2,263,12,C.edge,700,'center');
+   rect(22,126,W-44,70,'#e9d8ad');text(save.completed.length===LEVELS.length?'五十箱心意，都送达了！':'刚刚好，出库啦！',W/2,156,20,C.ink,800,'center');text(`${state.moves} 次操作 / ${save.completed.length} 箱已出库`,W/2,181,14,C.edge,400,'center');barcode(34,layout.tight?207:214,W-68,layout.tight?16:24);text(earned?`首次出库 +${earned} 金币 · 余额${save.coins}`:`本关已领过金币 · 余额${save.coins}`,W/2,Math.min(263,H-202),12,C.edge,700,'center');
    button('next',level.id===LEVELS.length?'查看关卡货架':'下一箱，继续装',20,H-186,W-40,48,{fill:C.orange});button('restart','重装这一箱',20,H-128,W-40,48);button('levels','回到关卡货架',20,H-70,W-40,48);
   }else if(modal==='briefing'){
    const lessons=['先从货架选一件，再点箱内左上角。两件都装入就能完成第一箱。','L形包裹要转个方向。旋转只改变方向，不会翻面。','弯角彼此借位，把每一个空隙都用起来。','斜纹是防撞隔板。它不可以移动，也不能放包裹。','粉色软包可以从四格挤成三格，再展开回来。'];
    text(`第${level.chapter}章 / 第${level.id}箱`,20,133,13,C.edge,700);wrap(level.id<=5?lessons[level.id-1]:level.story,20,168,W-40,16,C.ink,27,5);
    boxArt(W/2-62,Math.min(274,H-204),124,60);text(level.batches.length>1?`${level.batches.length}批货物 · 所有轮廓已列在货单`:'阿乔在旁边，不赶时间。',W/2,H-108,12,C.edge,700,'center');button('briefStart','知道了，开工',20,H-74,W-40,48,{fill:C.orange});
+  }else if(modal==='rack'){
+   text('点选货物后回到箱内，形状不会缩小',20,127,12,C.edge,700);const tw=(W-56)/3;
+   level.pieces.forEach((p,i)=>{const x=20+(i%3)*(tw+8),y=140+Math.floor(i/3)*74,batch=level.batches.findIndex(b=>b.includes(p.id)),placed=!!state.placements[p.id],active=currentBatch(level,state).includes(p.id)&&!state.sealed.includes(p.id);rect(x+1,y+3,tw,68,C.edge);rrect(x,y,tw,68,2,active?C.paper:'#ded9c7',C.edge);const shape=getShape(p,state.forms[p.id]),cols=Math.max(...shape.map(v=>v[0]))+1,rows=Math.max(...shape.map(v=>v[1]))+1,cell=Math.min(15,35/rows,(tw-12)/cols);parcelShape(p,state.forms[p.id],x+(tw-cols*cell)/2,y+4,cell);text(`${p.id} ${cargo(p).name}${placed?'✓':''}`,x+tw/2,y+49,11,C.ink,700,'center');text(`第${batch+1}批${state.sealed.includes(p.id)?' · 已封':''}`,x+tw/2,y+62,9,C.edge,700,'center');targets.push({id:'rackPiece:'+p.id,pieceId:p.id,label:p.name,x,y,w:tw,h:68,disabled:false});});button('close','回到装箱工位',20,H-64,W-40,44,{fill:C.orange});
   }else if(modal==='manifest'){
    text(`当前第${state.stage+1}/${level.batches.length}批 · 封签后位置锁定`,20,128,12,C.edge,700);const tw=(W-56)/3;
-   level.pieces.forEach((p,i)=>{const x=20+(i%3)*(tw+8),y=144+Math.floor(i/3)*77,batch=level.batches.findIndex(b=>b.includes(p.id));rect(x,y,tw,69,batch===state.stage?'#f2dfaa':'#e5dfcc');const shape=getShape(p,state.forms[p.id]),cols=Math.max(...shape.map(v=>v[0]))+1,rows=Math.max(...shape.map(v=>v[1]))+1,cell=Math.min(13,40/rows,(tw-12)/cols);parcelShape(p,state.forms[p.id],x+(tw-cols*cell)/2,y+6,cell);text(`${p.id} · 第${batch+1}批${state.sealed.includes(p.id)?' 封':''}`,x+tw/2,y+58,11,C.ink,700,'center');});
+   level.pieces.forEach((p,i)=>{const x=20+(i%3)*(tw+8),y=144+Math.floor(i/3)*77,batch=level.batches.findIndex(b=>b.includes(p.id));rect(x,y,tw,69,batch===state.stage?'#f2dfaa':'#e5dfcc');const shape=getShape(p,state.forms[p.id]),cols=Math.max(...shape.map(v=>v[0]))+1,rows=Math.max(...shape.map(v=>v[1]))+1,cell=Math.min(13,40/rows,(tw-12)/cols);parcelShape(p,state.forms[p.id],x+(tw-cols*cell)/2,y+6,cell);text(`${p.id} ${cargo(p).name}·${batch+1}批${state.sealed.includes(p.id)?' 封':''}`,x+tw/2,y+58,10,C.ink,700,'center');});
    if(canSeal(level,state))button('seal','确认封签，锁住本批位置',20,H-70,W-40,48,{fill:C.orange,font:13});else button('close','看好了，继续装',20,H-70,W-40,48,{fill:C.orange});
   }else if(modal==='failure'){
    wrap(state.failure||'封签后的空位形状无法容纳后续货物。',20,146,W-40,15,C.ink,25,4);text('每箱最多拆签复活一次；重开一直免费。',20,248,12,C.edge,700);const available=!state.reviveUsed&&!!state.checkpoint,ad=rewards.getState();
@@ -132,7 +174,7 @@ export function startGame(platform) {
    wrap('预检先看封签是否留有可行解；定位贴标出一件当前包裹的建议位置。道具不会直接过关。',20,H-72,W-40,12,C.edge,20,3);
   }else if(modal==='rewardMock'){
    wrap('开发用模拟广告：不播放视频，不联网。选择「模拟完成」后才会验证并发奖。',20,133,W-40,13,C.edge,21,3);
-   [['completed','模拟完成'],['cancelled','提前关闭，不领奖'],['unavailable','模拟无填充'],['error','模拟错误']].forEach(([status,label],i)=>button('mock:'+status,label,20,204+i*49,W-40,44,{fill:i===0?C.orange:C.paper,font:13}));
+   [['completed','模拟完成'],['cancelled','提前关闭，不领奖'],['unavailable','模拟无填充'],['error','模拟错误']].forEach(([status,label],i)=>button('mock:'+status,label,20,(layout.tight?180:204)+i*(layout.tight?47:49),W-40,44,{fill:i===0?C.orange:C.paper,font:13}));
    button('freeRestart','取消模拟，免费重开',20,H-64,W-40,44,{font:12});
   }else if(modal==='benefit'){
    wrap(lastBenefit,20,149,W-40,16,C.ink,28,7);barcode(24,H-150,W-48,22);button('benefitContinue','回到工位',20,H-74,W-40,48,{fill:C.orange});
@@ -176,8 +218,9 @@ export function startGame(platform) {
   else if(id==='play'){screen='play';modal=state.status==='failed'?'failure':!state.briefSeen?'briefing':null;trail=[];}
   else if(id==='home'){toast='';toastUntil=0;cancelRewardRun();screen='home';modal=null;trail=[];persist();}
   else if(id==='sound'){save.sound=!save.sound;platform.audio.setMuted(!save.sound);persist();platform.audio.play('tap');}
-  else if(['menu','help','levels','hint','restart','settings','sidebarInfo','manifest','tools'].includes(id))openModal(id);
+  else if(['menu','help','levels','hint','restart','settings','sidebarInfo','manifest','tools','rack'].includes(id))openModal(id);
   else if(id==='close')closeModal();
+  else if(id.startsWith('rackPiece:')){selected=id.split(':')[1];modal=null;trail=[];platform.audio.play('tap');}
   else if(id==='briefStart'){state.briefSeen=true;modal=null;trail=[];persist();}
   else if(id==='levelsPrev')levelsPage=Math.max(0,levelsPage-1);
   else if(id==='levelsNext')levelsPage=Math.min(4,levelsPage+1);
@@ -205,8 +248,8 @@ export function startGame(platform) {
    if(hit){if(hit.id==='piece'&&!hit.disabled){selected=hit.pieceId;drag={id:event.id,start:p,current:p,moved:false,pieceId:selected,anchor:{x:0,y:0},hit};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,hit};return;}
    if(modal||screen!=='play'||layout.compact)return;const at=boardPoint(p);if(at){const id=occupiedCells(level,state).get(`${at.x},${at.y}`);if(selected&&selected!==id&&canPlace(level,state,selected,at.x,at.y).ok)drag={id:event.id,start:p,current:p,moved:false,at};else if(id){selected=id;const pos=state.placements[id];drag={id:event.id,start:p,current:p,moved:false,pieceId:id,anchor:{x:at.x-pos.x,y:at.y-pos.y}};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,at};}
   }else if(drag&&event.id===drag.id){
-   if(event.type==='cancel'){drag=null;requestDraw();return;}if(event.type==='move'){drag.current=p;if(drag.pieceId&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>6)drag.moved=true;requestDraw();}
-   else if(event.type==='up'){const ended=drag;drag=null;if(ended.moved&&ended.pieceId){const at=boardPoint(p,ended.anchor);if(at)action('place',at);else notify('未放下，包裹仍在原位');}else if(ended.hit){const hit=ended.hit;if(p.x>=hit.x&&p.x<=hit.x+hit.w&&p.y>=hit.y&&p.y<=hit.y+hit.h)activate(hit);}else if(ended.at&&Math.hypot(p.x-ended.start.x,p.y-ended.start.y)<10){if(selected)action('place',ended.at);else notify('先选一件包裹');}requestDraw();}
+   if(event.type==='cancel'){drag=null;requestDraw();return;}if(event.type==='move'){drag.current=p;const distance=Math.hypot(p.x-drag.start.x,p.y-drag.start.y);if(drag.pieceId&&distance>6)drag.moved=true;else if(!drag.pieceId&&(distance>10||(drag.hit&&(p.x<drag.hit.x||p.x>drag.hit.x+drag.hit.w||p.y<drag.hit.y||p.y>drag.hit.y+drag.hit.h))))drag.cancelled=true;requestDraw();}
+   else if(event.type==='up'){const ended=drag;drag=null;if(ended.moved&&ended.pieceId){const at=boardPoint(p,ended.anchor);if(at)action('place',at);else notify('未放下，包裹仍在原位');}else if(ended.hit&&!ended.cancelled){const hit=ended.hit;if(p.x>=hit.x&&p.x<=hit.x+hit.w&&p.y>=hit.y&&p.y<=hit.y+hit.h)activate(hit);}else if(ended.at&&!ended.cancelled&&Math.hypot(p.x-ended.start.x,p.y-ended.start.y)<10){if(selected)action('place',ended.at);else notify('先选一件包裹');}requestDraw();}
   }
  }
  disposers.push(platform.onPointer(pointer),platform.onResize(()=>{size=platform.getSize();drag=null;invalidate();}),platform.onPause(()=>{paused=true;drag=null;inputReady=false;targets=[];if(frame!==null){platform.cancelFrame(frame);frame=null;}persist();}),platform.onResume(()=>{paused=false;invalidate();}));
