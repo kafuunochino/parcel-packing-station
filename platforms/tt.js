@@ -12,19 +12,24 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
   const subscribe = name => fn => { listeners[name].add(fn); return () => listeners[name].delete(fn); };
   const bind = (on, off, fn) => { if (typeof api[on] === 'function') { api[on](fn); removers.push(() => { if (typeof api[off] === 'function') api[off](fn); }); } };
   let size;
-  function resize() {
+  function resize(event) {
     const info = api.getSystemInfoSync();
-    const width = info.windowWidth || info.screenWidth, height = info.windowHeight || info.screenHeight;
-    const safe = info.safeArea || {};
+    const changed = event && (event.size || event) || {};
+    const positive = n => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : 0;
+    const width = positive(changed.windowWidth) || positive(info.screenWidth) || positive(info.windowWidth);
+    const height = positive(changed.windowHeight) || positive(info.screenHeight) || positive(info.windowHeight);
+    const safe = info.safeArea || {}, bounded = (n,max) => Math.max(0,Math.min(Number(n)||0,max));
     let menuBottom = 0;
-    if (typeof api.getMenuButtonBoundingClientRect === 'function') {
-      try { const menu = api.getMenuButtonBoundingClientRect(); if (menu && Number.isFinite(menu.bottom)) menuBottom = menu.bottom + 6; } catch (_error) { /* Capability is optional. */ }
-    }
-    const next = { width, height, dpr: Math.min(info.pixelRatio || 1, 3),
-      safeTop: Math.max(Number(safe.top) || 0, menuBottom || ((Number(info.statusBarHeight) || 0) + 48)),
-      safeBottom: Math.max(12, Number.isFinite(safe.bottom) ? height - safe.bottom : 0),
-      safeLeft: Math.max(0, Number(safe.left) || 0),
-      safeRight: Math.max(0, Number.isFinite(safe.right) ? width - safe.right : 0) };
+    try {
+      const menu = typeof api.getMenuButtonLayout === 'function' ? api.getMenuButtonLayout() :
+        typeof api.getMenuButtonBoundingClientRect === 'function' ? api.getMenuButtonBoundingClientRect() : null;
+      if (menu && Number.isFinite(menu.bottom) && menu.bottom > 0) menuBottom = menu.bottom + 6;
+    } catch (_error) { /* Optional host menu capability. */ }
+    const next = { width, height, dpr: Math.min(positive(info.pixelRatio) || 1, 3),
+      safeTop: bounded(Math.max(Number(safe.top)||0,menuBottom || ((Number(info.statusBarHeight)||0)+48)),height/3),
+      safeBottom: bounded(Math.max(12,Number.isFinite(safe.bottom)?height-safe.bottom:0),height/3),
+      safeLeft: bounded(safe.left,width/4),
+      safeRight: bounded(Number.isFinite(safe.right)?width-safe.right:0,width/4) };
     if (!(next.width > 0 && next.height > 0)) throw new Error('Platform viewport dimensions are missing');
     if (size && next.width === size.width && next.height === size.height && next.dpr === size.dpr && next.safeTop === size.safeTop && next.safeBottom === size.safeBottom && next.safeLeft === size.safeLeft && next.safeRight === size.safeRight) return;
     size = next;
@@ -43,7 +48,8 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
   const stopAudio = () => sounds.forEach(sound => sound.pause());
   bind('onHide', 'offHide', () => { stopAudio(); emit('pause'); });
   bind('onShow', 'offShow', () => { resize(); emit('resume'); });
-  // The spike is portrait-only. Verify host resize behavior before landscape/tablet support.
+  // Touch coordinates stay logical pixels; resize invalidates the game gesture.
+  bind('onWindowResize', 'offWindowResize', resize);
   return {
     canvas, sidebar, rewards, getSize: () => ({ ...size }),
     onPointer: subscribe('pointer'), onResize: subscribe('resize'), onPause: subscribe('pause'), onResume: subscribe('resume'),
