@@ -3,10 +3,10 @@
   "version": "0.3.1",
   "private": true,
   "type": "module",
-  "description": "快递收纳站：Canvas2D 软包压缩装箱解谜 Demo",
+  "description": "快递收纳站｜停止维护的收纳解谜实验原型（游戏废案）",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node --test test/rules.test.js test/storage.test.js test/runtime.test.js test/browser-adapter.test.js test/build.test.js test/sidebar.test.js test/campaign.test.js test/native-viewport.test.js",
+    "test": "node --test test/rules.test.js test/storage.test.js test/runtime.test.js test/browser-adapter.test.js test/build.test.js test/sidebar.test.js test/campaign.test.js test/native-viewport.test.js test/audio-lifecycle.test.js",
     "verify": "node scripts/verify-campaign.mjs",
     "build": "node scripts/build.mjs",
     "test:runtime-proof": "node qa/runtime-validation/scripts/build.mjs && node --test qa/runtime-validation/test/runtime.test.js",

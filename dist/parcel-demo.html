@@ -1,0 +1,2108 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><meta name="theme-color" content="#30382f"><title>快递收纳站 · Canvas 测试版</title><link rel="icon" href="data:,"><style>:root{--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#30382f}canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}</style></head><body><canvas id="game" tabindex="0" aria-label="快递收纳站。点击包裹再点击箱内格子放置，所有操作按钮绘制在画面中。"></canvas><script>(function(){'use strict';
+// src/rules.js
+/** Pure rules. Cells are integer [x,y] coordinates, relative to normalized top-left. */
+function normalizeShape(cells) {
+  if (!Array.isArray(cells) || !cells.length || cells.some(c => !Array.isArray(c) || c.length !== 2 || c.some(n => !Number.isInteger(n)))) throw new TypeError('Invalid polyomino');
+  const minX = Math.min(...cells.map(c => c[0])), minY = Math.min(...cells.map(c => c[1]));
+  return [...new Map(cells.map(([x,y]) => [`${x-minX},${y-minY}`, [x-minX,y-minY]])).values()].sort((a,b) => a[1]-b[1] || a[0]-b[0]);
+}
+function rotateShape(cells, turns = 1) {
+  if (!Number.isInteger(turns)) throw new TypeError('Rotation must be integer quarter turns');
+  let result = normalizeShape(cells);
+  for (let n = 0; n < ((turns % 4) + 4) % 4; n++) result = normalizeShape(result.map(([x,y]) => [-y,x]));
+  return result;
+}
+function shapeKey(cells) { return JSON.stringify(normalizeShape(cells)); }
+function getPiece(level, id) { return level.pieces.find(p => p.id === id); }
+function getShape(piece, form = {}) { return rotateShape(form.compressed && piece.soft ? piece.compressedShape : piece.shape, form.rotation || 0); }
+function createState(level) {
+  const forms={};
+  level.pieces.forEach(p=>{forms[p.id]={rotation:0,compressed:!!p.startCompressed};});
+  return { levelId: level.id, placements: {}, forms, history: [], moves: 0 };
+}
+function occupiedCells(level, state, exceptId = null) {
+  const occupied = new Map();
+  for (const [id, position] of Object.entries(state.placements)) {
+    if (id === exceptId) continue;
+    const piece = getPiece(level,id);
+    if (!piece) continue;
+    for (const [x,y] of getShape(piece,state.forms[id])) occupied.set(`${position.x+x},${position.y+y}`,id);
+  }
+  return occupied;
+}
+function canPlace(level,state,id,x,y,form = state.forms[id]) {
+  const piece = getPiece(level,id);
+  if (!piece || !Number.isInteger(x) || !Number.isInteger(y)) return {ok:false,reason:'请把包裹放在格子里'};
+  const blocked = new Set(level.blocked.map(c=>c.join(','))), occupied = occupiedCells(level,state,id);
+  for (const [dx,dy] of getShape(piece,form)) {
+    const px=x+dx,py=y+dy,key=`${px},${py}`;
+    if(px<0||py<0||px>=level.width||py>=level.height) return {ok:false,reason:'包裹超出箱子啦，往里挪一点'};
+    if(blocked.has(key)) return {ok:false,reason:'这里是固定隔板，不能放包裹'};
+    if(occupied.has(key)) return {ok:false,reason:'包裹碰在一起了，换个位置试试'};
+  }
+  return {ok:true,reason:''};
+}
+function copyRecords(records) { const copy={};Object.keys(records).forEach(id=>{copy[id]={...records[id]};});return copy; }
+const snapshot = state => ({levelId:state.levelId, placements:copyRecords(state.placements), forms:copyRecords(state.forms), moves:state.moves});
+function commit(state,next) { return {...next,history:[...state.history,snapshot(state)].slice(-100),moves:state.moves+1}; }
+function applyAction(level,state,action) {
+  const fail = reason => ({ok:false,state,reason});
+  if (!action || !action.type) return fail('未知操作');
+  if (action.type === 'undo') {
+    if(!state.history.length) return fail('还没有可以撤回的操作');
+    return {ok:true,state:{...state.history[state.history.length-1],history:state.history.slice(0,-1)},reason:''};
+  }
+  if(action.type === 'reset') return {ok:true,state:createState(level),reason:''};
+  const piece=getPiece(level,action.pieceId);
+  if(!piece) return fail('请先选一个包裹');
+  const next=snapshot(state), id=piece.id;
+  if(action.type==='place') {
+    const check=canPlace(level,state,id,action.x,action.y);
+    if(!check.ok) return fail(check.reason);
+    if(state.placements[id] && state.placements[id].x===action.x && state.placements[id].y===action.y) return fail('已经放在这里了');
+    next.placements[id]={x:action.x,y:action.y};
+  } else if(action.type==='remove') {
+    if(!state.placements[id]) return fail('这个包裹还没有装箱');
+    delete next.placements[id];
+  } else if(action.type==='rotate' || action.type==='compress') {
+    const form={...state.forms[id]};
+    if(action.type==='rotate') form.rotation=(form.rotation+1)%4;
+    else {
+      if(!piece.soft) return fail('只有粉色软包可以压缩');
+      form.compressed=!form.compressed;
+    }
+    const at=state.placements[id];
+    if(at) {
+      const check=canPlace(level,state,id,at.x,at.y,form);
+      if(!check.ok) return fail(`${check.reason}；可以先取出再变形`);
+    }
+    next.forms[id]=form;
+  } else return fail('未知操作');
+  return {ok:true,state:commit(state,next),reason:''};
+}
+function isWin(level,state) {
+  return level.pieces.every(p=>state.placements[p.id] && canPlace(level,state,p.id,state.placements[p.id].x,state.placements[p.id].y).ok)
+    && occupiedCells(level,state).size === level.width*level.height-level.blocked.length;
+}
+function remainingCells(level,state) { return level.width*level.height-level.blocked.length-occupiedCells(level,state).size; }
+function restoreState(level,data) {
+  const clean=createState(level);
+  if(!data || data.levelId!==level.id || !data.forms || !data.placements || typeof data.forms!=='object' || typeof data.placements!=='object' || Array.isArray(data.placements)) return clean;
+  if(Object.keys(data.placements).some(id=>!getPiece(level,id))) return clean;
+  for(const piece of level.pieces) {
+    const form=data.forms[piece.id];
+    if(!form || !Number.isInteger(form.rotation) || form.rotation<0 || form.rotation>3 || typeof form.compressed!=='boolean' || (!piece.soft&&form.compressed)) return createState(level);
+    clean.forms[piece.id]={rotation:form.rotation,compressed:form.compressed};
+  }
+  for(const piece of level.pieces) {
+    const at=data.placements[piece.id];
+    if(!at) continue;
+    if(!canPlace(level,clean,piece.id,at.x,at.y).ok) return createState(level);
+    clean.placements[piece.id]={x:at.x,y:at.y};
+  }
+  clean.moves=Number.isSafeInteger(data.moves)&&data.moves>=0&&data.moves<=100000 ? data.moves:0;
+  return clean;
+}
+
+// src/campaign-designs.js
+// Frozen offline-designed layouts. Every starting position and seal path is verified.
+const CAMPAIGN_DESIGNS=[
+  {
+    "id": 11,
+    "title": "留给后车的长缝",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "AABB",
+      "AABB",
+      "CCCC",
+      "DDDD"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "B",
+        "C",
+        "D"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 12,
+    "title": "第一道封签",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "DDCA",
+      "DDCA",
+      "BCCA",
+      "BBCA"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "C",
+        "B"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 13,
+    "title": "拐角别先占满",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "SSDD",
+      "SAAA",
+      "CAAB",
+      "CCBB"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "S",
+        "D",
+        "C",
+        "B"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 14,
+    "title": "不是空格越多越好",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "ADSS",
+      "ADSS",
+      "ABBC",
+      "AABC"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "S",
+        "B",
+        "C"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 15,
+    "title": "给软包留个弯",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "EBCCC",
+      "EBBCD",
+      "EAACD",
+      "AAADD"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "E",
+        "B",
+        "C",
+        "D"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 16,
+    "title": "两批心意同一箱",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "DDAAA",
+      "BBBAA",
+      "CCBSS",
+      "CCCSS"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "B",
+        "C",
+        "S"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 17,
+    "title": "短边上的约定",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "SSCCC",
+      "SBBBD",
+      "EEBDD",
+      "AAAAD"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "S",
+        "C",
+        "B",
+        "D",
+        "E"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 18,
+    "title": "纸箱里的通道",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CCEEE",
+      "CBBBE",
+      "DDBFF",
+      "DDAAA"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "E",
+        "B",
+        "D",
+        "F"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 3,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 19,
+    "title": "先看清下一批",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "DDDCC",
+      "DASSC",
+      "EASBC",
+      "EABBB"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "C",
+        "S",
+        "E",
+        "B"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 20,
+    "title": "早班交接单",
+    "tag": "第2章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "AAAAA",
+      "CCSSB",
+      "CCSSB",
+      "DDBBB"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "S",
+        "B",
+        "D"
+      ]
+    ],
+    "chapter": 2,
+    "story": "阿乔：后车还在路上，完整货单先给你。封签前想一想，那些形状放哪儿？",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 21,
+    "title": "留给后车的长缝 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "BBBAA",
+      "BBC#A",
+      "ECCDA",
+      "ECDD#"
+    ],
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "B",
+        "C",
+        "E",
+        "D"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 22,
+    "title": "第一道封签 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "FB#CC",
+      "FBBCC",
+      "FAASS",
+      "DDASS",
+      "DDEEE"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "F",
+        "B",
+        "C",
+        "S",
+        "D",
+        "E"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 23,
+    "title": "拐角别先占满 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "A#CSS",
+      "AACSB",
+      "DAC#B",
+      "DDBBB"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "S",
+        "B",
+        "D"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 2,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 24,
+    "title": "不是空格越多越好 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "EEDGG",
+      "#EDDD",
+      "FFAAH",
+      "BFCAH",
+      "BBCCC"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "E",
+        "D",
+        "G",
+        "F",
+        "H",
+        "B",
+        "C"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 25,
+    "title": "给软包留个弯 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "SS#CC",
+      "SAD#C",
+      "AADDD",
+      "BBBBD"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "S",
+        "C",
+        "D",
+        "B"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 26,
+    "title": "两批心意同一箱 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "EEEEE",
+      "BBAAA",
+      "BCCDD",
+      "SSCDD",
+      "SS#FF"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "E",
+        "B",
+        "C",
+        "D",
+        "S",
+        "F"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 1,
+      "compressed": false
+    }
+  },
+  {
+    "id": 27,
+    "title": "短边上的约定 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "AACFF",
+      "AACCB",
+      "EE#DB",
+      "E#DDB"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "F",
+        "B",
+        "E",
+        "D"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 2,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 28,
+    "title": "纸箱里的通道 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CCASS",
+      "AAASS",
+      "BB#FF",
+      "BBEFD",
+      "EEEDD"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "S",
+        "B",
+        "F",
+        "E",
+        "D"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 29,
+    "title": "先看清下一批 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "SSCCC",
+      "SBBCA",
+      "BBDAA",
+      "#BD#A"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "S",
+        "C",
+        "B",
+        "D"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 30,
+    "title": "早班交接单 · 雨天隔板",
+    "tag": "第3章 · 2批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CCCBB",
+      "CCEBB",
+      "DEEB#",
+      "DDEFF",
+      "AAAAF"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "B",
+        "E",
+        "D",
+        "F"
+      ]
+    ],
+    "chapter": 3,
+    "story": "屋檐滴着雨，纸箱加上了防撞隔板。能放下的空隙，比空格数量更重要。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 31,
+    "title": "留给后车的长缝 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "BBFSSA",
+      "BBFSAA",
+      "#BCCD#",
+      "EEECDD",
+      "#ECCDD"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "B",
+        "F",
+        "S"
+      ],
+      [
+        "C",
+        "D",
+        "E"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 32,
+    "title": "第一道封签 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "EEESSC",
+      "BBESSC",
+      "#BEACC",
+      "DDAA##",
+      "DD#FFF"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "E",
+        "S",
+        "C"
+      ],
+      [
+        "B",
+        "D",
+        "F"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 33,
+    "title": "拐角别先占满 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "#AABBE",
+      "AAACBE",
+      "DDCCBE",
+      "DDGCB#",
+      "DGGFFF"
+    ],
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "B",
+        "E",
+        "C"
+      ],
+      [
+        "D",
+        "G",
+        "F"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 3,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 34,
+    "title": "不是空格越多越好 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "##CCCC",
+      "DDCSSB",
+      "DDASSB",
+      "E#AAFB",
+      "EEAAFF"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "D",
+        "S"
+      ],
+      [
+        "B",
+        "E",
+        "F"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 35,
+    "title": "给软包留个弯 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "DDDGEE",
+      "DAAGEE",
+      "CCAFFF",
+      "CSSB#F",
+      "CSBBB#"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "G",
+        "E",
+        "C"
+      ],
+      [
+        "F",
+        "S",
+        "B"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 4,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 36,
+    "title": "两批心意同一箱 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "GGAC#F",
+      "DAACCF",
+      "DDACCB",
+      "DEEBBB",
+      "DE#HHB"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "G",
+        "C",
+        "F",
+        "D"
+      ],
+      [
+        "B",
+        "E",
+        "H"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 37,
+    "title": "短边上的约定 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "FFAAA#",
+      "#FAASS",
+      "EECBSD",
+      "E#CBBD",
+      "ECCCBD"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "F",
+        "S",
+        "E"
+      ],
+      [
+        "C",
+        "B",
+        "D"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 38,
+    "title": "纸箱里的通道 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "DDDASS",
+      "CDEASS",
+      "CEEAFF",
+      "C##BF#",
+      "CCBBB#"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "S",
+        "C"
+      ],
+      [
+        "E",
+        "F",
+        "B"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 39,
+    "title": "先看清下一批 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "#DG#FF",
+      "DDGCCF",
+      "DACCEF",
+      "BAAAEF",
+      "BBBEEE"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "D",
+        "G",
+        "F"
+      ],
+      [
+        "C",
+        "E",
+        "B"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 40,
+    "title": "早班交接单 · 夜班接力",
+    "tag": "第4章 · 3批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CCFFEE",
+      "CBBA#E",
+      "CBDAAE",
+      "CBDSSE",
+      "#DDSS#"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "F",
+        "E"
+      ],
+      [
+        "B",
+        "D",
+        "S"
+      ]
+    ],
+    "chapter": 4,
+    "story": "夜班同事一批批送来货物。你留下的位置，决定下一次交接能不能继续。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 41,
+    "title": "留给后车的长缝 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "#HHEGG",
+      "#FFEE#",
+      "FFF#CB",
+      "DDCCCB",
+      "DAASSB",
+      "AAASBB"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "H",
+        "E",
+        "G"
+      ],
+      [
+        "F",
+        "C",
+        "B"
+      ],
+      [
+        "D",
+        "S"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 42,
+    "title": "第一道封签 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "GGJJJJ",
+      "GECJDD",
+      "GECCDD",
+      "EEC#FF",
+      "HHCAFF",
+      "BBBAA#"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "G",
+        "J",
+        "E"
+      ],
+      [
+        "C",
+        "D",
+        "F"
+      ],
+      [
+        "H",
+        "B"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 2,
+      "y": 1,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 43,
+    "title": "拐角别先占满 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "FFSSBE",
+      "FGSBBE",
+      "GGGCEE",
+      "A#CCCH",
+      "A#CDDH",
+      "AA#DDD"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "F",
+        "S",
+        "B"
+      ],
+      [
+        "E",
+        "G",
+        "C"
+      ],
+      [
+        "H",
+        "D"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 44,
+    "title": "不是空格越多越好 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CC#DGE",
+      "SSDDGE",
+      "SSD#AE",
+      "BBD#AE",
+      "B#FFAA",
+      "BBFHHH"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "D",
+        "G"
+      ],
+      [
+        "E",
+        "S",
+        "B"
+      ],
+      [
+        "F",
+        "H"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 2,
+      "y": 0,
+      "rotation": 3,
+      "compressed": false
+    }
+  },
+  {
+    "id": 45,
+    "title": "给软包留个弯 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "AGGGFF",
+      "AHCCCF",
+      "AHHCCF",
+      "AHDE#F",
+      "JDDE#B",
+      "JJDEBB"
+    ],
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "G",
+        "F",
+        "H"
+      ],
+      [
+        "C",
+        "D",
+        "E"
+      ],
+      [
+        "J",
+        "B"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 4,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 46,
+    "title": "两批心意同一箱 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "BBBBGG",
+      "SS#BFG",
+      "SSHFFA",
+      "DDH#AA",
+      "DDCEAE",
+      "#CCEEE"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "B",
+        "G",
+        "S"
+      ],
+      [
+        "F",
+        "H",
+        "D"
+      ],
+      [
+        "C",
+        "E"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 47,
+    "title": "短边上的约定 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "FGG##E",
+      "FGG#EE",
+      "FFSSAA",
+      "F#SAAA",
+      "DDCCCB",
+      "DDDBBB"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "F",
+        "G",
+        "E"
+      ],
+      [
+        "S",
+        "D"
+      ],
+      [
+        "C",
+        "B"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 4,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 48,
+    "title": "纸箱里的通道 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CCEEE#",
+      "CCEHH#",
+      "CADDDF",
+      "JAABFF",
+      "JAABBF",
+      "GGGBBF"
+    ],
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "E",
+        "H"
+      ],
+      [
+        "D",
+        "F",
+        "J"
+      ],
+      [
+        "B",
+        "G"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 49,
+    "title": "先看清下一批 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "HHSSFF",
+      "GHSBFF",
+      "GGBBFE",
+      "DCCCEE",
+      "DDAAAE",
+      "#DAA##"
+    ],
+    "soft": "S",
+    "startCompressed": true,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "H",
+        "S",
+        "F"
+      ],
+      [
+        "G",
+        "B",
+        "E"
+      ],
+      [
+        "D",
+        "C"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 1,
+      "y": 3,
+      "rotation": 0,
+      "compressed": false
+    }
+  },
+  {
+    "id": 50,
+    "title": "早班交接单 · 最后一车",
+    "tag": "第5章 · 4批交接",
+    "hint": "先查看全部货物轮廓。装完当前批再封签；封签会锁住位置，留错空隙可能卡住。",
+    "map": [
+      "CCCCFF",
+      "EECBBB",
+      "E###BB",
+      "#AAASS",
+      "GGAASS",
+      "GGGDDD"
+    ],
+    "soft": "S",
+    "startCompressed": false,
+    "batches": [
+      [
+        "A"
+      ],
+      [
+        "C",
+        "F",
+        "E"
+      ],
+      [
+        "B",
+        "S"
+      ],
+      [
+        "G",
+        "D"
+      ]
+    ],
+    "chapter": 5,
+    "story": "最后一车开往远方。别急着落下封签，替还没装入的每一份心意留条路。",
+    "badSeal": {
+      "pieceId": "A",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "compressed": false
+    }
+  }
+];
+
+// src/levels.js
+const colors=['mint','gold','blue','peach','lavender','lime','teal','sand'];
+const labels=['茶叶礼盒','香氛小样','陶瓷杯','手工饼干','棉袜套装','桌面摆件','旅行套装','文具礼盒'];
+/** These are handcrafted solved layouts, not randomized runtime boards. # = fixed separator. */
+const designs=[
+  {id:1,title:'第一箱，轻轻松松',tag:'入门 · 点击放置',hint:'点一个包裹，再点箱内左上角。把每一格都装满，就能出库。',map:['AAA','BBB']},
+  {id:2,title:'转个弯，就合适',tag:'入门 · 旋转包裹',hint:'选好包裹后按「旋转」。L 形包裹换个方向，就能靠在一起。',map:['AAB','ABB','CCC']},
+  {id:3,title:'给邻居留个位置',tag:'热身 · 拼形组合',hint:'不一定先放最大的。想想两只弯角包裹可以靠在哪边。',map:['AABB','ACCB','DDCC']},
+  {id:4,title:'隔板不能动',tag:'热身 · 固定隔板',hint:'带斜纹的格子是隔板。先看边角，再安排中间的大包裹。',map:['#AAB','CAAB','CCDD','#CDD']},
+  {id:5,title:'软包，挤一下！',tag:'新技能 · 软包压缩',hint:'粉色软包可以从 4 格挤成 3 格。选中它，按「挤一下」，空隙就出现了。',map:['SSAA','SBAA','BBCC'],soft:'S'},
+  {id:6,title:'也要记得松一松',tag:'新技能 · 软包展开',hint:'这次软包已经压扁了。按「松一松」恢复 4 格，箱子才不会留空。',map:['AASS','ABSS','BBCC','#DDD'],soft:'S',startCompressed:true},
+  {id:7,title:'满满一箱心意',tag:'进阶 · 六件拼箱',hint:'先辨认长条与方盒的落点，再让软包填好最后那个弯角。',map:['AAABB','ACCCB','DDSEE','DSSEE'],soft:'S'},
+  {id:8,title:'两道隔板的考验',tag:'进阶 · 不规则空间',hint:'上下各一块隔板。大包裹要提前占好位置，别把空间切碎。',map:['#AAAB','CCABB','CDDBB','SDDEE','SS#EE'],soft:'S'},
+  {id:9,title:'今天的最后一车',tag:'挑战 · 八件拼箱',hint:'软包这次需要 4 格。长条和大弯角很挑位置，不妨先从它们开始。',map:['AAABBB','ACCDBB','ECCDDD','ESSFFG','ESSFFG'],soft:'S',startCompressed:true},
+  {id:10,title:'金牌装箱师',tag:'终章 · 九件大挑战',hint:'给四格长条预留一条边，让压缩后的软包嵌进转角。慢慢来，可以随时撤回。',map:['#AABBB','CAADBB','CCDDDE','FSSGGE','FSHGGE','FFHHHE'],soft:'S'}
+];
+designs.push(...CAMPAIGN_DESIGNS);
+function makeLevel(d) {
+  const groups=new Map(),blocked=[];
+  d.map.forEach((row,y)=>[...row].forEach((id,x)=>{if(id==='#')blocked.push([x,y]);else {if(!groups.has(id))groups.set(id,[]);groups.get(id).push([x,y]);}}));
+  const pieces=[],solution=[];
+  let regular=0;
+  for(const [id,cells] of groups) {
+    const soft=id===d.soft, original=normalizeShape(cells),turns=d.id===1?0:(regular+d.id)%4;
+    const piece={id,name:soft?'云朵软包':labels[regular%labels.length],color:soft?'pink':colors[regular%colors.length],soft,
+      shape:soft?[[0,0],[1,0],[0,1],[1,1]]:rotateShape(original,turns),
+      ...(soft?{compressedShape:[[0,0],[1,0],[0,1]],startCompressed:!!d.startCompressed}:{})};
+    const compressed=soft&&cells.length===3, source=compressed?piece.compressedShape:piece.shape;
+    const rotation=[0,1,2,3].find(r=>shapeKey(rotateShape(source,r))===shapeKey(original));
+    if(rotation===undefined)throw new Error(`Invalid handmade layout ${d.id}/${id}`);
+    pieces.push(piece);solution.push({pieceId:id,x:Math.min(...cells.map(c=>c[0])),y:Math.min(...cells.map(c=>c[1])),rotation,compressed});
+    if(!soft)regular++;
+  }
+  const batches=d.batches||[pieces.map(p=>p.id)],order=[].concat(...batches);
+  pieces.sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));solution.sort((a,b)=>order.indexOf(a.pieceId)-order.indexOf(b.pieceId));
+  return {id:d.id,title:d.title,tag:d.tag,hint:d.hint,batches,chapter:d.chapter||1,story:d.story||'阿乔把旧仓钥匙递给你：先把眼前这箱装好。',badSeal:d.badSeal||null,width:d.map[0].length,height:d.map.length,blocked,pieces,solution,solutionMap:d.map};
+}
+const LEVELS=designs.map(makeLevel);
+const getLevel=id=>LEVELS.find(l=>l.id===id)||LEVELS[0];
+
+// src/campaign-rules.js
+const clone=value=>JSON.parse(JSON.stringify(value));
+function currentBatch(level,state){return (level.batches||[level.pieces.map(p=>p.id)])[state.stage||0]||[];}
+function createCampaignState(level){return {...createState(level),stage:0,sealed:[],status:'playing',failure:null,reviveUsed:false,checkpoint:null,toolsUsed:{scan:false,locate:false},briefSeen:false};}
+function canSeal(level,state){return state.status!=='failed'&&(state.stage||0)<(level.batches||[[]]).length-1&&currentBatch(level,state).every(id=>state.placements[id]);}
+function findCompletion(level,state,options={}){
+ const limit=options.maxNodes||60000,fixedIds=options.fixedIds||state.sealed||[],occupied=Array(level.width*level.height).fill(false),used=new Set(),solution=[];
+ for(const [x,y]of level.blocked)occupied[y*level.width+x]=true;
+ for(const id of fixedIds){const piece=level.pieces.find(p=>p.id===id),at=state.placements[id];if(!piece||!at||!canPlace(level,state,id,at.x,at.y).ok)return {status:'impossible',nodes:0,solution:[]};used.add(id);for(const [dx,dy]of getShape(piece,state.forms[id]))occupied[(at.y+dy)*level.width+at.x+dx]=true;solution.push({pieceId:id,x:at.x,y:at.y,...state.forms[id]});}
+ const byCell=Array.from({length:occupied.length},()=>[]),candidates=[];
+ for(const piece of level.pieces){if(used.has(piece.id))continue;const seen=new Set();for(const compressed of piece.soft?[false,true]:[false])for(let rotation=0;rotation<4;rotation++){
+  const form={rotation,compressed},shape=getShape(piece,form),signature=JSON.stringify(shape);if(seen.has(signature))continue;seen.add(signature);
+  for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){const cells=shape.map(([dx,dy])=>[x+dx,y+dy]);if(cells.some(([px,py])=>px>=level.width||py>=level.height||occupied[py*level.width+px]))continue;const c={pieceId:piece.id,x,y,rotation,compressed,cells:cells.map(([px,py])=>py*level.width+px)};candidates.push(c);for(const i of c.cells)byCell[i].push(c);}
+ }}
+ let nodes=0,aborted=false;
+ function search(){if(++nodes>limit){aborted=true;return false;}if(used.size===level.pieces.length)return occupied.every(Boolean);let best=null;
+  for(let i=0;i<occupied.length;i++){if(occupied[i])continue;const legal=byCell[i].filter(c=>!used.has(c.pieceId)&&c.cells.every(j=>!occupied[j]));if(!legal.length)return false;if(!best||legal.length<best.length)best=legal;if(best.length===1)break;}
+  if(!best)return false;for(const c of best){used.add(c.pieceId);c.cells.forEach(i=>occupied[i]=true);solution.push(c);if(search())return true;solution.pop();c.cells.forEach(i=>occupied[i]=false);used.delete(c.pieceId);if(aborted)return false;}return false;
+ }
+ const ok=search();return {status:ok?'solved':aborted?'unknown':'impossible',nodes,solution:ok?solution.map(({cells,...p})=>p):[]};
+}
+function applyCampaignAction(level,state,action){
+ const fail=reason=>({ok:false,state,reason});if(!action||!action.type)return fail('未知操作');
+ if(action.type==='reset')return {ok:true,state:createCampaignState(level),reason:''};
+ if(action.type==='revive'){
+  if(state.status!=='failed'||state.reviveUsed||!state.checkpoint)return fail('本箱无法再次拆签，仍可免费重开');
+  return {ok:true,state:{...clone(state.checkpoint),history:[],status:'playing',failure:null,reviveUsed:true,checkpoint:null,toolsUsed:{...state.toolsUsed}},reason:'已拆开最后一道封签，调整位置后重新封签'};
+ }
+ if(state.status==='failed')return fail('本箱已卡住。可免费重开，或选择拆签复活');
+ if(action.type==='seal'){
+  if(!canSeal(level,state))return fail('先装入本批全部包裹，才能封签');
+  const checkpoint=clone({...state,history:[],checkpoint:null}),sealed=[...state.sealed,...currentBatch(level,state)],next={...state,stage:state.stage+1,sealed,checkpoint,clue:null,history:[],moves:state.moves+1};
+  const check=findCompletion(level,next);if(check.status==='impossible'){next.status='failed';next.failure='封签后留下的空隙形状，已无法装下后续货物。不是空格数量的问题。';}
+  return {ok:true,state:next,reason:check.status==='unknown'?'验货暂未完成，可继续调整未封签货物':next.status==='failed'?next.failure:'本批已封签，下一批到站'};
+ }
+ if(action.type!=='undo'){
+  if(state.sealed.includes(action.pieceId))return fail('这件包裹已封签，不能移动；免费重开始终可用');
+  if(!currentBatch(level,state).includes(action.pieceId))return fail('后续货物可以提前查看，完成本批并封签后才能装入');
+ }
+ const result=applyAction(level,state,action);if(!result.ok)return result;
+ const {stage,sealed,status,failure,reviveUsed,checkpoint,toolsUsed}=state;
+ return {...result,state:{...state,...result.state,stage,sealed:[...sealed],status,failure,reviveUsed,checkpoint,toolsUsed:{...toolsUsed}}};
+}
+function campaignWin(level,state){return state.status!=='failed'&&isWin(level,state);}
+function restoreCampaignState(level,data){
+ const clean={...createCampaignState(level),...restoreState(level,data)};if(!data)return clean;
+ const batches=level.batches||[level.pieces.map(p=>p.id)],stage=Number.isInteger(data.stage)&&data.stage>=0&&data.stage<batches.length?data.stage:0,expected=[].concat(...batches.slice(0,stage));
+ if(expected.some(id=>!clean.placements[id])||Object.keys(clean.placements).some(id=>![].concat(...batches.slice(0,stage+1)).includes(id)))return createCampaignState(level);
+ clean.briefSeen=data.briefSeen===true;clean.stage=stage;clean.sealed=expected;clean.reviveUsed=data.reviveUsed===true;clean.toolsUsed={scan:!!(data.toolsUsed&&data.toolsUsed.scan),locate:!!(data.toolsUsed&&data.toolsUsed.locate)};
+ if(data.checkpoint&&typeof data.checkpoint==='object'&&stage>0){const raw={...data.checkpoint,checkpoint:null,status:'playing'},prior=restoreCampaignState(level,raw);if(prior.stage===stage-1&&prior.levelId===level.id&&currentBatch(level,prior).every(id=>prior.placements[id]))clean.checkpoint=prior;}
+ if(data.clue&&clean.toolsUsed.locate){const c=data.clue,piece=level.pieces.find(p=>p.id===c.pieceId),probe={...clean,placements:{}};for(const id of clean.sealed)probe.placements[id]=clean.placements[id];if(piece&&Number.isInteger(c.rotation)&&c.rotation>=0&&c.rotation<4&&typeof c.compressed==='boolean'&&canPlace(level,probe,c.pieceId,c.x,c.y,c).ok)clean.clue={pieceId:c.pieceId,x:c.x,y:c.y,rotation:c.rotation,compressed:c.compressed};}
+ if(data.status==='failed'&&clean.checkpoint&&findCompletion(level,clean).status==='impossible'){clean.status='failed';clean.failure='封签后的空隙已无法装下后续货物。';}
+ return clean;
+}
+
+// src/economy.js
+const TOOL_PRICES={scan:6,locate:8,revive:10};
+function awardClear(save,levelId){
+ const awarded=Array.isArray(save.awardedLevels)?save.awardedLevels:[];if(awarded.includes(levelId))return {save,earned:0};
+ return {save:{...save,coins:Math.min(100000,(save.coins||0)+20),awardedLevels:[...awarded,levelId]},earned:20};
+}
+function useBenefit(level,state,kind){
+ if(kind==='revive')return applyCampaignAction(level,state,{type:'revive'});
+ const fail=reason=>({ok:false,state,reason});if(state.status==='failed')return fail('先处理卡住的封签，或免费重开');
+ if(!['scan','locate'].includes(kind))return fail('未知道具');if(state.toolsUsed[kind])return fail('这种道具每箱最多使用一次');
+ if(kind==='scan'){
+  if(!canSeal(level,state))return fail('先摆好本批包裹，再使用封签预检');
+  const check=findCompletion(level,state,{fixedIds:[...state.sealed,...currentBatch(level,state)]});if(check.status==='unknown')return fail('预检未完成，不扣金币或次数');
+  return {ok:true,state:{...state,toolsUsed:{...state.toolsUsed,scan:true}},reason:check.status==='solved'?'预检通过：按这个位置封签，后续仍有可行拼法。':'预检提醒：此时封签会卡死。请先调整当前批的位置。',effect:{kind,status:check.status}};
+ }
+ const check=findCompletion(level,state);if(check.status!=='solved')return fail(check.status==='unknown'?'暂时未找到定位，不扣金币或次数':'已封签的形状造成死局，定位贴无法修复；可免费重开');
+ const ids=currentBatch(level,state),id=ids.find(id=>!state.placements[id])||ids[0],target=check.solution.find(p=>p.pieceId===id);
+ if(!target)return fail('本批已完成，不扣金币或次数');
+ return {ok:true,state:{...state,toolsUsed:{...state.toolsUsed,locate:true},clue:target},reason:`定位贴：${id}放在第${target.x+1}列、第${target.y+1}行；旋转${target.rotation*90}度${target.compressed?'，软包压缩':''}。`,effect:{kind,target}};
+}
+function purchaseBenefit(level,state,save,kind){
+ const price=TOOL_PRICES[kind];if(!Number.isInteger(price))return {ok:false,state,save,reason:'未知道具'};
+ if(!Number.isInteger(save.coins)||save.coins<price)return {ok:false,state,save,reason:'金币不足。仍可免费重开，金币只从通关获得。'};
+ const result=useBenefit(level,state,kind);if(!result.ok)return {...result,save};
+ return {...result,save:{...save,coins:save.coins-price},spent:price};
+}
+
+// src/rewards.js
+// Reserved reward contract. No ad SDK, real ad unit, payment or network is enabled.
+function createMockRewards(options={}){
+ let active=null,counter=0,destroyed=false;
+ const settle=status=>{if(!active)return false;const request=active;active=null;if(request.timer&&options.timers)options.timers.clearTimeout(request.timer);request.resolve({status,requestId:request.id});return true;};
+ return {getState:()=>({mode:'mock',available:!destroyed,busy:!!active}),request({placement,context}={}){if(destroyed||active)return Promise.resolve({status:'unavailable',requestId:null});const id=`mock-${++counter}`;return new Promise(resolve=>{active={id,placement,context,resolve};if(options.timers)active.timer=options.timers.setTimeout(()=>{if(active&&active.id===id)settle('error');},options.timeoutMs||60000);});},completeMock(status){return ['completed','cancelled','unavailable','error'].includes(status)?settle(status):false;},cancel(){settle('cancelled');},destroy(){destroyed=true;settle('cancelled');}};
+}
+function createDisabledRewards(){let counter=0;return {getState:()=>({mode:'disabled',available:false,busy:false}),request:()=>Promise.resolve({status:'unavailable',requestId:`disabled-${++counter}`}),cancel(){},destroy(){}};}
+
+// src/storage.js
+const SAVE_KEY='parcel-packing-station:save:v1';
+const SAVE_VERSION=2;
+const freshSave=()=>({version:SAVE_VERSION,levelId:1,completed:[],bestMoves:{},sound:false,coins:0,awardedLevels:[],state:createCampaignState(LEVELS[0])});
+function loadSave(storage) {
+  try {
+    const raw=storage ? storage.getItem(SAVE_KEY) : null;
+    if(!raw)return {save:freshSave(),status:'new'};
+    const data=JSON.parse(raw);
+    if((!data || (data.version!==1&&data.version!==SAVE_VERSION)))return {save:freshSave(),status:'incompatible'};
+    const level=getLevel(data.levelId),ids=new Set(LEVELS.map(l=>l.id));
+    const completed=Array.isArray(data.completed)?[...new Set(data.completed.filter(id=>ids.has(id)))]:[];
+    const bestMoves={};
+    if(data.bestMoves&&typeof data.bestMoves==='object')for(const [id,moves] of Object.entries(data.bestMoves))if(ids.has(Number(id))&&Number.isSafeInteger(moves)&&moves>=0&&moves<100000)bestMoves[id]=moves;
+    const awardedLevels=data.version===1?[...completed]:Array.isArray(data.awardedLevels)?[...new Set(data.awardedLevels.filter(id=>ids.has(id)))]:[];
+    const coins=data.version===1?completed.length*20:Number.isSafeInteger(data.coins)&&data.coins>=0&&data.coins<=100000?data.coins:0;
+    return {save:{version:SAVE_VERSION,levelId:level.id,completed,bestMoves,sound:data.sound===true,coins,awardedLevels,state:restoreCampaignState(level,data.state)},status:data.version===1?'migrated':'restored'};
+  }catch(_error){return {save:freshSave(),status:'unavailable'};}
+}
+function writeSave(storage,save) {
+  try {
+    if(!storage)return false;
+    const {history,...state}=save.state;
+    storage.setItem(SAVE_KEY,JSON.stringify({...save,version:SAVE_VERSION,state,savedAt:new Date().toISOString()}));
+    return true;
+  }catch(_error){return false;}
+}
+
+// src/game.js
+const C={ink:'#292c25',muted:'#aeb6a0',warehouse:'#30382f',beam:'#52604d',paper:'#fff2d1',kraft:'#c99554',edge:'#825b35',orange:'#f5b640',red:'#b95640',mint:'#99bf87',gold:'#edc15a',blue:'#85b9d2',peach:'#e49576',lavender:'#aa95c9',lime:'#c2ce75',teal:'#76b6aa',sand:'#d6b987',pink:'#e99ab8'};
+const FONT='"Noto Sans CJK SC","PingFang SC","Microsoft YaHei",sans-serif';
+/** The entire game, including menus, is painted inside one Canvas. */
+function startGame(platform) {
+ const ctx=platform.canvas.getContext('2d');
+ if(!ctx)throw new Error('A Canvas2D context is required');
+ const loaded=loadSave(platform.storage);
+ let save=loaded.save,level=getLevel(save.levelId),state=save.state,selected=null,screen='home',modal=null,trail=[],tutorialPage=0,trayPage=0,levelsPage=0,runToken=1,rewardPending=null,earned=0,animation=null,lastBenefit='';
+ const rewards=platform.rewards||createDisabledRewards(),creditedRequests=new Set();
+ let targets=[],size=platform.getSize(),layout=null,drag=null,frame=null,paused=false,destroyed=false,inputReady=false,toast='',toastUntil=0;
+ let saveOK=loaded.status!=='unavailable';
+ const disposers=[],sidebar=platform.sidebar||null;
+ let sidebarState=sidebar?sidebar.getState():{available:false,enteredFromSidebar:false,pending:false};
+ platform.audio.setMuted(!save.sound);
+ function persist(){save.levelId=level.id;save.state=state;saveOK=writeSave(platform.storage,save);}
+ function invalidate(){inputReady=false;targets=[];requestDraw();}
+ function requestDraw(){if(!destroyed&&!paused&&frame===null)frame=platform.requestFrame(draw);}
+ function notify(message){toast=message;toastUntil=Date.now()+2200;requestDraw();}
+ if(sidebar)disposers.push(sidebar.subscribe(next=>{const returned=!sidebarState.enteredFromSidebar&&next.enteredFromSidebar;sidebarState=next;if(returned)notify('已从侧边栏回到仓库');invalidate();}));
+ function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(x,y,w,h);}
+ function line(x,y,ex,ey,color,width=1){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
+ function poly(points,color){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=color;ctx.fill();}
+ function rrect(x,y,w,h,r=3,fill,stroke){r=Math.max(0,Math.min(r,w/2,h/2));ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
+ function text(value,x,y,font=14,color=C.ink,weight=400,align='left'){ctx.font=`${weight} ${font}px ${FONT}`;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillStyle=color;ctx.fillText(String(value),x,y);}
+ function wrap(value,x,y,width,font=14,color=C.ink,lineHeight=22,maxLines=5){let current='',row=0;ctx.font=`400 ${font}px ${FONT}`;for(const ch of value){if(ctx.measureText(current+ch).width>width&&current){text(current,x,y+row*lineHeight,font,color);row++;current=ch;if(row>=maxLines)return;}else current+=ch;}if(current)text(current,x,y+row*lineHeight,font,color);}
+ function barcode(x,y,w,h,color=C.ink){let offset=0;for(let i=0;offset<w;i++){const width=i%3===0?3:1;rect(x+offset,y,Math.min(width,w-offset),h,color);offset+=width+(i%2===0?2:3);}}
+ function button(id,label,x,y,w,h,options={}){const disabled=!!options.disabled;ctx.globalAlpha=disabled ? .40 : 1;rect(x+1,y+3,w,h,C.ink);rrect(x,y,w,h,3,options.fill||C.paper,options.border||C.edge);text(label,x+w/2,y+h/2+5,options.font||14,options.color||C.ink,700,'center');if(options.tag)rect(x+6,y+6,4,h-12,C.orange);if(drag&&drag.hit&&drag.hit.id===id&&!drag.cancelled&&!disabled){ctx.globalAlpha=.18;rect(x+2,y+2,w-4,h-4,'#ffffff');}ctx.globalAlpha=1;targets.push({id,label,x,y,w,h,disabled,...options.data});}
+ function dimensions(){
+  size=platform.getSize();const safe={top:Math.max(0,Number(size.safeTop)||0),bottom:Math.max(0,Number(size.safeBottom)||0),left:Math.max(0,Number(size.safeLeft)||0),right:Math.max(0,Number(size.safeRight)||0)};
+  const availableWidth=Math.max(1,size.width-safe.left-safe.right),W=Math.min(480,availableWidth),H=Math.max(1,size.height-safe.top-safe.bottom);
+  return {W,H,scale:1,ox:safe.left+(availableWidth-W)/2,oy:safe.top,safeInsets:safe,compact:W<304||H<426,tight:H<482,board:null,footerY:H-54,trayY:H-(H<482?66:122)};
+ }
+ function logical(event){const l=layout||dimensions();return {x:event.x-l.ox,y:event.y-l.oy};}
+ function warehouse(){
+  rect(0,0,size.width,size.height,C.warehouse);
+  for(let x=18;x<size.width;x+=180){rect(x,0,7,size.height,'#44513f');for(let y=70;y<size.height;y+=176){rect(x+20,y,64,56,'#45503e');rect(x+27,y+8,8,40,'#566045');rect(x+94,y+12,54,44,'#3f4939');}}
+  poly([[size.width*.42,0],[size.width*.72,0],[size.width*.94,size.height],[size.width*.55,size.height]],'rgba(244,222,153,0.035)');
+  for(let y=132;y<size.height;y+=176){rect(0,y,size.width,8,'#58624a');rect(0,y+8,size.width,4,'#20281f');}
+ }
+ function cargo(piece){const names=['茶叶','香氛','陶杯','饼干','棉袜','木玩','旅行','文具'];const n=piece.soft?8:Math.max(0,['茶叶礼盒','香氛小样','陶瓷杯','手工饼干','棉袜套装','桌面摆件','旅行套装','文具礼盒'].indexOf(piece.name));return {name:piece.soft?'围巾':names[n],kind:n};}
+ function cargoIcon(piece,x,y,size){
+  const kind=cargo(piece).kind;ctx.save();ctx.translate(x,y);ctx.scale(size/32,size/32);const dark='#684e36',cream='#fff5dc';
+  if(kind===0){rrect(5,7,22,22,3,'#78966b',dark);rect(4,4,24,5,'#b7c49c');rrect(9,12,14,11,1,cream);poly([[13,19],[15,13],[21,14],[18,20]],'#6d8651');line(14,20,20,14,cream,1);}
+  else if(kind===1){rrect(7,12,18,17,4,'#d6ae6e',dark);rect(12,4,8,8,'#756348');rect(10,1,12,4,'#a78d61');rrect(11,17,10,8,1,cream);poly([[16,18],[20,21],[16,24],[12,21]],'#ba7962');}
+  else if(kind===2){rrect(4,9,19,20,4,'#efeee0',dark);ctx.beginPath();ctx.moveTo(23,12);ctx.quadraticCurveTo(35,10,29,22);ctx.lineTo(23,24);ctx.strokeStyle=dark;ctx.lineWidth=2;ctx.stroke();line(9,3,8,7,'#c39d72',2);line(15,0,14,5,'#c39d72',2);rect(8,17,11,3,'#88a8b1');}
+  else if(kind===3){rrect(3,5,26,24,7,'#c99656',dark);rrect(7,8,18,17,5,null,'#eec589');for(const [a,b]of [[11,12],[20,14],[14,20],[22,23],[7,20]])rrect(a,b,3,3,1,'#785037');}
+  else if(kind===4){poly([[7,3],[15,3],[15,21],[21,23],[21,29],[7,29],[4,24],[7,19]],'#ba756e');poly([[18,2],[26,2],[26,19],[30,22],[28,27],[17,25],[15,20],[18,16]],'#e4c19d');rect(7,5,8,4,cream);rect(18,4,8,4,cream);}
+  else if(kind===5){rrect(6,4,8,8,4,'#bd9567',dark);rrect(19,4,8,8,4,'#bd9567',dark);rrect(6,7,21,20,8,'#d4b288',dark);rect(11,14,2,3,dark);rect(21,14,2,3,dark);rrect(12,19,10,6,3,cream);rect(16,19,3,2,dark);}
+  else if(kind===6){rrect(11,1,10,8,2,null,dark);rrect(4,7,24,21,4,'#8b9c9f',dark);rect(10,8,3,19,'#dec9a3');rect(20,8,3,19,'#dec9a3');rect(7,28,4,3,dark);rect(23,28,4,3,dark);}
+  else if(kind===7){poly([[5,6],[20,3],[24,26],[9,29]],'#e4c986');line(10,7,14,27,'#9a7751',2);poly([[24,3],[28,4],[23,25],[19,29],[19,23]],'#bd7760');line(22,7,26,8,cream,2);}
+  else{poly([[5,3],[18,3],[18,15],[27,15],[27,25],[13,25],[10,13],[5,13]],'#ad6d7e');for(let i=0;i<4;i++){line(6+i*3,4,6+i*3,12,'#e7b8b8',1);line(15,17+i*2,26,17+i*2,'#e7b8b8',1);}for(let i=0;i<4;i++)line(16+i*3,24,16+i*3,29,'#ad6d7e',2);}
+  ctx.restore();
+ }
+ function parcelShape(piece,form,x,y,cell,alpha=1,options={}){
+  const cells=getShape(piece,form),has=new Set(cells.map(c=>c.join(','))),cols=Math.max(...cells.map(c=>c[0]))+1,rows=Math.max(...cells.map(c=>c[1]))+1,base=C[piece.color],tiny=cell<24,margin=tiny?.7:2;
+  ctx.save();ctx.globalAlpha=alpha;
+  for(const [dx,dy]of cells){const px=x+dx*cell,py=y+dy*cell;if(!has.has(`${dx},${dy+1}`))rect(px+margin,py+cell-1,cell-margin*2,4,'rgba(33,32,23,0.28)');if(!has.has(`${dx+1},${dy}`))rect(px+cell-1,py+margin,3,cell-margin*2,'rgba(33,32,23,0.2)');}
+  ctx.save();ctx.beginPath();for(const [dx,dy]of cells){const l=has.has(`${dx-1},${dy}`)?0:margin,t=has.has(`${dx},${dy-1}`)?0:margin,r=has.has(`${dx+1},${dy}`)?0:margin,b=has.has(`${dx},${dy+1}`)?0:margin;ctx.rect(x+dx*cell+l,y+dy*cell+t,cell-l-r,cell-t-b);}ctx.clip();
+  let surface=base;if(typeof ctx.createLinearGradient==='function'){surface=ctx.createLinearGradient(x,y,x+cols*cell,y+rows*cell);surface.addColorStop(0,base);surface.addColorStop(.55,base);surface.addColorStop(1,'#b29a76');}rect(x,y,cols*cell,rows*cell,surface);
+  if(!tiny){for(let yy=5;yy<rows*cell;yy+=8)line(x,y+yy,x+cols*cell,y+yy,piece.soft?'rgba(255,241,222,0.18)':'rgba(100,75,47,0.055)',1);for(let xx=7;xx<cols*cell;xx+=13)line(x+xx,y,x+xx-3,y+rows*cell,'rgba(255,243,218,0.09)',1);}
+  const tapeX=x+Math.floor(cols/2)*cell+(cols%2?cell*.48:0),tapeW=Math.max(3,cell*.18);rect(tapeX-tapeW/2,y,tapeW,rows*cell,piece.soft?'rgba(174,100,121,0.33)':'rgba(248,224,174,0.6)');line(tapeX-tapeW/2,y,tapeX-tapeW/2,y+rows*cell,'rgba(115,81,42,0.22)',1);line(tapeX+tapeW/2,y,tapeX+tapeW/2,y+rows*cell,'rgba(255,247,221,0.65)',1);
+  if(options.sealed){for(let yy=cell*.4;yy<rows*cell;yy+=cell*1.45){rect(x,y+yy,cols*cell,Math.max(7,cell*.15),'#e6c688');for(let xx=5;xx<cols*cell;xx+=45){text('封签',x+xx,y+yy+Math.max(7,cell*.11),Math.max(6,cell*.1),'#9d5140',700);}}}
+  ctx.restore();
+  for(const [dx,dy]of cells){const px=x+dx*cell,py=y+dy*cell;const stroke=options.selected?'#fff2b8':piece.soft?'#8f596c':'#806445',lw=options.selected?2:tiny?1:1.5;
+   if(piece.soft&&typeof ctx.setLineDash==='function')ctx.setLineDash(tiny?[]:[3,3]);
+   if(!has.has(`${dx},${dy-1}`)){line(px+margin,py+margin,px+cell-margin,py+margin,stroke,lw);if(!tiny)line(px+margin+1,py+5,px+cell-margin-1,py+5,'rgba(255,245,214,0.65)',2);}
+   if(!has.has(`${dx-1},${dy}`))line(px+margin,py+margin,px+margin,py+cell-margin,stroke,lw);
+   if(!has.has(`${dx},${dy+1}`)){line(px+margin,py+cell-margin,px+cell-margin,py+cell-margin,stroke,lw);if(!tiny)line(px+margin+1,py+cell-5,px+cell-margin-1,py+cell-5,'rgba(104,74,43,0.2)',3);}
+   if(!has.has(`${dx+1},${dy}`))line(px+cell-margin,py+margin,px+cell-margin,py+cell-margin,stroke,lw);
+   if(typeof ctx.setLineDash==='function')ctx.setLineDash([]);
+   if(!tiny&&!has.has(`${dx+1},${dy}`)&&!has.has(`${dx},${dy-1}`)){poly([[px+cell-15,py+3],[px+cell-3,py+3],[px+cell-3,py+15]],piece.soft?'#c48c9e':'#d5ba8b');line(px+cell-15,py+3,px+cell-3,py+15,'rgba(105,76,45,0.4)',1);}
+  }
+  const first=cells[0],px=x+first[0]*cell,py=y+first[1]*cell;
+  if(tiny){cargoIcon(piece,px+cell*.13,py+cell*.12,cell*.74);}else{
+   const label=Math.min(cell-12,58),lx=px+(cell-label)/2,ly=py+(cell-label)/2;ctx.save();ctx.translate(lx+label/2,ly+label/2);ctx.rotate(piece.soft?-.055:.025);rect(-label/2+1,-label/2+2,label,label,'rgba(56,40,23,0.14)');rrect(-label/2,-label/2,label,label,2,'#fff2d4','#d4bd8f');cargoIcon(piece,-label*.32,-label*.36,label*.64);barcode(-label*.31,label*.28,label*.62,Math.max(3,label*.08),'#785e42');text(cargo(piece).name,0,label*.23,Math.max(7,Math.min(10,label*.2)),C.edge,700,'center');ctx.restore();
+   const tag=Math.max(13,Math.min(20,cell*.25));rrect(px+3,py+3,tag,tag,2,options.selected?C.orange:'#e4ceb0','#7c6246');text(piece.id,px+3+tag/2,py+3+tag*.78,Math.max(9,tag*.67),C.ink,700,'center');
+  }ctx.restore();
+ }
+ function boxArt(x,y,w,h){rect(x+8,y+10,w,h,'#20261f');poly([[x,y],[x+w*.82,y],[x+w,y+18],[x+w,y+h],[x,y+h]],C.kraft);rect(x+8,y+9,w-16,h-17,'#a9753d');rect(x+14,y+15,w-28,h-29,'#ead5a8');poly([[x,y],[x+16,y-12],[x+w-12,y-12],[x+w*.82,y]],'#ddaf73');poly([[x+w*.82,y],[x+w,y+18],[x+w,y+h],[x+w-12,y+h-8],[x+w-12,y+20]],'#a87942');for(let i=0;i<9;i++)line(x+15,y+20+i*(h-32)/9,x+w-20,y+19+i*(h-32)/9,'rgba(126,91,47,0.07)');rect(x+w*.43,y,20,h,'rgba(249,222,166,0.5)');barcode(x+w-64,y+h-32,40,16,C.edge);}
+ function drawHome(){
+  const {W,H}=layout,pad=20;
+  rect(pad,20,84,22,C.orange);text('PACK / 50',pad+9,36,12,C.ink,700);text(`${save.coins} 金币`,W-pad,36,13,C.orange,700,'right');
+  text('快递收纳站',pad,86,Math.min(40,W*.102),C.paper,800);text('留好下一批的位置，再落下封签。',pad,114,Math.min(14,(W-40)/18),'#c8d1b7');
+  const y=layout.tight?132:148,minArt=layout.tight?50:76,artH=Math.min(240,Math.max(minArt,H-428)),artW=Math.min(W-64,300);boxArt((W-artW)/2,y,artW,Math.max(minArt,artH));
+  const demo=LEVELS[4],soft=demo.pieces.find(p=>p.soft);parcelShape(soft,{rotation:0,compressed:true},W/2-25,y+18,Math.max(layout.tight?16:24,Math.min(50,artH*.32)));text('本地工位 / 无需赶时间',W/2,y+Math.max(minArt,artH)+34,12,C.muted,400,'center');
+  const startY=H-216;button('play',state.moves?'继续装箱':'开始装箱',pad,startY,W-pad*2,52,{fill:C.orange,font:18,tag:true});
+  const half=(W-pad*2-10)/2;button('levels','关卡货架',pad,startY+62,half,48);button('help','装箱说明',pad+half+10,startY+62,half,48);button('settings','工位设置',pad,startY+120,W-pad*2,48);
+  text(`${save.completed.length} / 50 箱已出库 · ${saveOK?'进度保存在此设备':'此设备无法存档'}`,W/2,H-16,11,C.muted,400,'center');
+ }
+ function drawCompact(){const {W,H}=layout;text('竖起手机，打开工位',W/2,Math.max(80,H*.3),20,C.paper,700,'center');wrap('请使用竖屏或放大窗口。装箱进度已保留，按钮不会被缩成小图标。',24,Math.max(110,H*.3+36),W-48,14,C.muted,23,4);button('home','返回仓库',24,H-70,W-48,48);}
+ function drawPlay(){
+  const {W,H,trayY,footerY}=layout;
+  button('menu','菜单',10,4,52,44,{fill:'#d3ba88'});button(layout.tight?'rack':'help',layout.tight?'货架':'说明',W-62,4,52,44,{fill:'#d3ba88'});
+  if(state.status==='failed')button('showFailure','这箱卡住了',W/2-66,4,132,44,{fill:'#e3a38c'});else if(campaignWin(level,state))button('showWin','出库单',W/2-66,4,132,44,{fill:C.orange});else if(level.batches.length>1)button('manifest',canSeal(level,state)?'本批已齐 · 待封签':`货单 · 第${state.stage+1}/${level.batches.length}批`,W/2-84,4,168,44,{font:12,fill:canSeal(level,state)?C.orange:C.paper});else{text(`${String(level.id).padStart(2,'0')} 号装箱工位`,W/2,25,16,C.paper,700,'center');const chosen=level.pieces.find(p=>p.id===selected);text(chosen?`${chosen.id} ${chosen.name}${chosen.soft?(state.forms[chosen.id].compressed?' · 三格':' · 四格'):''}`:'点击包裹 · 对齐左上角',W/2,43,10,C.muted,400,'center');}
+  text(`装入 ${Object.keys(state.placements).length}/${level.pieces.length}`,14,70,12,C.paper,700);text(`空格 ${remainingCells(level,state)}`,W/2,70,12,C.paper,700,'center');text(`${state.moves} 步`,W-14,70,12,C.paper,700,'right');
+  const cell=Math.min((W-40)/level.width,(trayY-96)/level.height,88),bw=cell*level.width,bh=cell*level.height,bx=(W-bw)/2,by=84+((trayY-96)-bh)/2;
+  layout.board={x:bx,y:by,w:bw,h:bh,cell};rect(bx-12,by-12,bw+24,bh+24,'#80562f');rect(bx-8,by-8,bw+16,bh+16,C.kraft);rect(bx-3,by-3,bw+6,bh+6,'#a97642');
+  const occupied=occupiedCells(level,state),blocked=new Set(level.blocked.map(c=>c.join(',')));let preview=null;
+  if(drag&&drag.moved&&selected){const p=boardPoint(drag.current,drag.anchor);if(p)preview={...p,...canPlace(level,state,selected,p.x,p.y)};}
+  const previewCells=new Set();if(preview){const piece=level.pieces.find(p=>p.id===selected);getShape(piece,state.forms[selected]).forEach(([x,y])=>previewCells.add(`${x+preview.x},${y+preview.y}`));}
+  for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){
+   const key=`${x},${y}`,px=bx+x*cell+1.5,py=by+y*cell+1.5,edge=cell-3;
+   rrect(px,py,edge,edge,2,blocked.has(key)?'#9d8158':'#e4cba1','#b18755');
+   if(blocked.has(key)){ctx.save();ctx.beginPath();ctx.rect(px,py,edge,edge);ctx.clip();for(let a=-edge;a<edge*2;a+=10)line(px+a,py,px+a+edge,py+edge,'#645a3e',3);ctx.restore();}
+  }
+  for(const piece of level.pieces){const at=state.placements[piece.id];if(!at)continue;const bounce=animation&&animation.pieceId===piece.id&&['place','compress','rotate'].includes(animation.kind)&&Date.now()<animation.until?-Math.sin(Math.min(1,(Date.now()-animation.started)/(animation.until-animation.started))*Math.PI)*7:0;parcelShape(piece,state.forms[piece.id],bx+at.x*cell,by+at.y*cell+bounce,cell,1,{selected:selected===piece.id,sealed:state.sealed.includes(piece.id)});}
+  for(let y=0;y<level.height;y++)for(let x=0;x<level.width;x++){const key=`${x},${y}`,px=bx+x*cell+1.5,py=by+y*cell+1.5,edge=cell-3;
+   if(state.clue&&state.clue.pieceId===selected){const cp=level.pieces.find(p=>p.id===state.clue.pieceId);if(getShape(cp,state.clue).some(([dx,dy])=>state.clue.x+dx===x&&state.clue.y+dy===y))rrect(px+4,py+4,edge-8,edge-8,2,null,'#235b9b');}
+   if(previewCells.has(key)){ctx.globalAlpha=.55;rect(px,py,edge,edge,preview.ok?'#73b473':'#d36153');ctx.globalAlpha=1;}
+  }
+  // One accessible row of parcels. Pagination preserves 44px targets on 320px phones.
+  if(!layout.tight){const pages=Math.ceil(level.pieces.length/3),gap=5,side=44,cardW=(W-20-side*2-gap*4)/3;
+  rect(8,trayY-7,W-16,68,'#546148');button('trayPrev','‹',10,trayY,side,56,{disabled:trayPage===0,font:24,fill:'#b8bc94'});
+  level.pieces.slice(trayPage*3,trayPage*3+3).forEach((piece,i)=>{const x=10+side+gap+i*(cardW+gap),y=trayY,placed=!!state.placements[piece.id],chosen=selected===piece.id,available=currentBatch(level,state).includes(piece.id)&&!state.sealed.includes(piece.id),batch=level.batches.findIndex(b=>b.includes(piece.id))+1;rect(x+1,y+3,cardW,56,C.ink);rrect(x,y,cardW,56,2,chosen?C.orange:!available?'#cec9b5':piece.soft?'#f1c2d3':C.paper,chosen?C.orange:C.edge);const cells=getShape(piece,state.forms[piece.id]),cols=Math.max(...cells.map(c=>c[0]))+1,rows=Math.max(...cells.map(c=>c[1]))+1,pc=Math.min(12,(cardW-12)/cols,30/rows);parcelShape(piece,state.forms[piece.id],x+(cardW-cols*pc)/2,y+5+(30-rows*pc)/2,pc,placed ? .45 : 1);text(`${piece.id} ${cargo(piece).name}${placed?'✓':''}`,x+cardW/2,y+45,10,C.ink,700,'center');if(level.batches.length>1)text(`第${batch}批${state.sealed.includes(piece.id)?' · 已封':''}`,x+cardW/2,y+54,8,C.edge,700,'center');targets.push({id:'piece',pieceId:piece.id,label:`包裹 ${piece.id}`,x,y,w:cardW,h:56,disabled:false});});
+  button('trayNext','›',W-54,trayY,side,56,{disabled:trayPage>=pages-1,font:24,fill:'#b8bc94'});}
+  const piece=level.pieces.find(p=>p.id===selected),w=(W-20-18)/4,soft=!!(piece&&piece.soft),editable=!!piece&&state.status!=='failed'&&currentBatch(level,state).includes(piece.id)&&!state.sealed.includes(piece.id);
+  button('rotate','旋转',10,footerY,w,48,{disabled:!editable,fill:C.orange});button('compress',soft?(state.forms[selected].compressed?'展开':'压缩'):'软包',10+w+6,footerY,w,48,{disabled:!soft||!editable,fill:'#e7a5be'});button('remove','取出',10+(w+6)*2,footerY,w,48,{disabled:!editable||!state.placements[selected]});button('undo','撤回',10+(w+6)*3,footerY,w,48,{disabled:state.status==='failed'||!state.history.length});
+ }
+ function modalHeader(title){const {W,H}=layout;rect(4,4,W-8,H-8,C.paper);rect(4,4,W-8,7,C.kraft);barcode(20,22,45,17);text('PACKING RECORD',74,35,10,C.edge,700);button('close','返回',W-70,18,50,44,{fill:'#dfc99e'});text(title,20,88,24,C.ink,800);line(20,103,W-20,103,'#bca77e');targets=targets.filter(t=>t.id==='close');}
+ function drawModal(){
+  const {W,H}=layout;targets=[];ctx.fillStyle='rgba(20,25,19,0.8)';ctx.fillRect(0,0,W,H);
+  const titles={menu:'工位运单夹',levels:'关卡货架',help:'装箱说明',settings:'工位设置',hint:'参考装箱图',restart:'重新装这一箱？',win:'出库成功',sidebarInfo:'侧边栏复访',briefing:'今日交接',manifest:'完整货单',failure:'这箱卡住了',tools:'工位工具箱',rewardMock:'模拟广告',benefit:'工具回执',rack:'包裹货架'};
+  modalHeader(titles[modal]||'运单');
+  if(modal==='menu'){
+   const y=120,w=(W-50)/2;button('play','继续装箱',20,y,W-40,48,{fill:C.orange});
+   [['levels','关卡货架'],['manifest','完整货单'],['help','装箱说明'],['hint','参考拼法'],['restart','免费重开'],['tools','金币工具'],['settings','工位设置'],['home','返回仓库']].forEach(([id,label],i)=>button(id,label,20+(i%2)*(w+10),y+56+Math.floor(i/2)*50,w,44));
+   wrap(level.title+'。'+level.hint,20,H-70,W-40,12,C.edge,19,3);
+  }else if(modal==='levels'){
+   const names=['旧仓新手','早班接货','雨天隔板','夜班接力','最后一车'];text(`第${levelsPage+1}章 · ${names[levelsPage]}`,20,126,14,C.edge,700);const w=(W-50)/2,h=44;
+   LEVELS.slice(levelsPage*10,levelsPage*10+10).forEach((item,i)=>{const x=20+(i%2)*(w+10),y=(layout.tight?132:141)+Math.floor(i/2)*(layout.tight?46:49);button(`level:${item.id}`,`${String(item.id).padStart(2,'0')}  ${save.completed.includes(item.id)?'已出库':item.batches.length>1?item.batches.length+'批交接':'练习箱'}`,x,y,w,h,{fill:level.id===item.id?C.orange:C.paper,font:13});});
+   button('levelsPrev','上一章',20,H-74,(W-50)/2,44,{disabled:levelsPage===0});button('levelsNext','下一章',30+(W-50)/2,H-74,(W-50)/2,44,{disabled:levelsPage===4});text('换关替换当前摆放；金币与通关记录保留',W/2,H-15,10,C.edge,400,'center');
+  }else if(modal==='help'){
+   const pages=[['选包裹，放进箱子','先点货架上的包裹，再点箱内格子。以形状左上角对齐，也可以拖动放下。'],['转个方向，再试一次','选中包裹后点「旋转」。已放入的包裹也能旋转、挪动或取出。'],['粉色软包会挤也会松','软包可在四格方形和三格L形间切换。压缩或展开后仍可以旋转。'],['全部装入，填满空格','所有包裹都要放进箱子，除隔板外不能留空。前十关可自由撤回。'],['封签前，先看下一批','第十一关起分批到货。所有轮廓从一开始就能看；封签锁住本批，留错形状会卡住。始终可以免费重开。']];
+   const page=pages[tutorialPage];text(`${tutorialPage+1} / 5`,W-22,126,12,C.edge,700,'right');text(page[0],22,157,18,C.ink,700);wrap(page[1],22,188,W-44,14,C.ink,24,4);
+   const demo=LEVELS[4],piece=tutorialPage===2?demo.pieces.find(p=>p.soft):LEVELS[1].pieces[0],cell=Math.min(44,(H-330)/3);parcelShape(piece,{rotation:tutorialPage===1?1:0,compressed:tutorialPage===2},W/2-cell,Math.max(268,H/2+20),cell);
+   const w=(W-50)/2;button('tutorialPrev','上一步',20,H-74,w,48,{disabled:tutorialPage===0});button('tutorialNext',tutorialPage===4?'开始装箱':'下一步',30+w,H-74,w,48,{fill:C.orange});
+  }else if(modal==='settings'){
+   button('sound',save.sound?'音效：开启':'音效：关闭',20,126,W-40,52,{fill:C.orange});
+   if(sidebarState.available)button('sidebarInfo',sidebarState.enteredFromSidebar?'复访已确认':'侧边栏复访',20,192,W-40,48);
+   text('存档只在当前设备',20,sidebarState.available?280:228,17,C.ink,700);wrap('清理数据或更换设备后进度可能丢失。重新打开会恢复箱内摆放，但不会保留撤回历史。',20,sidebarState.available?310:258,W-40,14,C.edge,24,5);text(saveOK?'本地存档可用':'存档不可用，仍可继续游玩',20,H-34,12,saveOK?'#536d42':C.red,700);
+  }else if(modal==='hint'){
+   text('只供参考，不改变当前摆放',20,128,12,C.edge);const cell=Math.min((W-52)/level.width,(H-220)/level.height),bw=cell*level.width,bx=(W-bw)/2,by=151;
+   level.solutionMap.forEach((row,y)=>[...row].forEach((id,x)=>{const piece=level.pieces.find(p=>p.id===id);rect(bx+x*cell+1,by+y*cell+1,cell-2,cell-2,piece?C[piece.color]:'#a48f6d');text(id,bx+(x+.5)*cell,by+(y+.5)*cell+5,15,C.ink,700,'center');}));
+   const soft=level.solution.find(s=>s.pieceId==='S');wrap(soft?`本关软包：${soft.compressed?'压缩为三格L形':'展开为四格方形'}。`:'相同字母是同一件包裹，也可能有其他拼法。',20,H-42,W-40,12,C.edge,20,2);
+  }else if(modal==='restart'){
+   wrap('当前摆放、操作步数和撤回历史会清空。已经通关的记录会保留。',22,152,W-44,16,C.ink,27,5);const w=(W-50)/2;button('close','接着装',20,H-86,w,52);button('confirmRestart','重新装箱',30+w,H-86,w,52,{fill:C.orange});
+  }else if(modal==='win'){
+   rect(22,126,W-44,70,'#e9d8ad');text(save.completed.length===LEVELS.length?'五十箱心意，都送达了！':'刚刚好，出库啦！',W/2,156,20,C.ink,800,'center');text(`${state.moves} 次操作 / ${save.completed.length} 箱已出库`,W/2,181,14,C.edge,400,'center');barcode(34,layout.tight?207:214,W-68,layout.tight?16:24);text(earned?`首次出库 +${earned} 金币 · 余额${save.coins}`:`本关已领过金币 · 余额${save.coins}`,W/2,Math.min(263,H-202),12,C.edge,700,'center');
+   button('next',level.id===LEVELS.length?'查看关卡货架':'下一箱，继续装',20,H-186,W-40,48,{fill:C.orange});button('restart','重装这一箱',20,H-128,W-40,48);button('levels','回到关卡货架',20,H-70,W-40,48);
+  }else if(modal==='briefing'){
+   const lessons=['先从货架选一件，再点箱内左上角。两件都装入就能完成第一箱。','L形包裹要转个方向。旋转只改变方向，不会翻面。','弯角彼此借位，把每一个空隙都用起来。','斜纹是防撞隔板。它不可以移动，也不能放包裹。','粉色软包可以从四格挤成三格，再展开回来。'];
+   text(`第${level.chapter}章 / 第${level.id}箱`,20,133,13,C.edge,700);wrap(level.id<=5?lessons[level.id-1]:level.story,20,168,W-40,16,C.ink,27,5);
+   boxArt(W/2-62,Math.min(274,H-204),124,60);text(level.batches.length>1?`${level.batches.length}批货物 · 所有轮廓已列在货单`:'阿乔在旁边，不赶时间。',W/2,H-108,12,C.edge,700,'center');button('briefStart','知道了，开工',20,H-74,W-40,48,{fill:C.orange});
+  }else if(modal==='rack'){
+   text('点选货物后回到箱内，形状不会缩小',20,127,12,C.edge,700);const tw=(W-56)/3;
+   level.pieces.forEach((p,i)=>{const x=20+(i%3)*(tw+8),y=140+Math.floor(i/3)*74,batch=level.batches.findIndex(b=>b.includes(p.id)),placed=!!state.placements[p.id],active=currentBatch(level,state).includes(p.id)&&!state.sealed.includes(p.id);rect(x+1,y+3,tw,68,C.edge);rrect(x,y,tw,68,2,active?C.paper:'#ded9c7',C.edge);const shape=getShape(p,state.forms[p.id]),cols=Math.max(...shape.map(v=>v[0]))+1,rows=Math.max(...shape.map(v=>v[1]))+1,cell=Math.min(15,35/rows,(tw-12)/cols);parcelShape(p,state.forms[p.id],x+(tw-cols*cell)/2,y+4,cell);text(`${p.id} ${cargo(p).name}${placed?'✓':''}`,x+tw/2,y+49,11,C.ink,700,'center');text(`第${batch+1}批${state.sealed.includes(p.id)?' · 已封':''}`,x+tw/2,y+62,9,C.edge,700,'center');targets.push({id:'rackPiece:'+p.id,pieceId:p.id,label:p.name,x,y,w:tw,h:68,disabled:false});});button('close','回到装箱工位',20,H-64,W-40,44,{fill:C.orange});
+  }else if(modal==='manifest'){
+   text(`当前第${state.stage+1}/${level.batches.length}批 · 封签后位置锁定`,20,128,12,C.edge,700);const tw=(W-56)/3;
+   level.pieces.forEach((p,i)=>{const x=20+(i%3)*(tw+8),y=144+Math.floor(i/3)*77,batch=level.batches.findIndex(b=>b.includes(p.id));rect(x,y,tw,69,batch===state.stage?'#f2dfaa':'#e5dfcc');const shape=getShape(p,state.forms[p.id]),cols=Math.max(...shape.map(v=>v[0]))+1,rows=Math.max(...shape.map(v=>v[1]))+1,cell=Math.min(13,40/rows,(tw-12)/cols);parcelShape(p,state.forms[p.id],x+(tw-cols*cell)/2,y+6,cell);text(`${p.id} ${cargo(p).name}·${batch+1}批${state.sealed.includes(p.id)?' 封':''}`,x+tw/2,y+58,10,C.ink,700,'center');});
+   if(canSeal(level,state))button('seal','确认封签，锁住本批位置',20,H-70,W-40,48,{fill:C.orange,font:13});else button('close','看好了，继续装',20,H-70,W-40,48,{fill:C.orange});
+  }else if(modal==='failure'){
+   wrap(state.failure||'封签后的空位形状无法容纳后续货物。',20,146,W-40,15,C.ink,25,4);text('每箱最多拆签复活一次；重开一直免费。',20,248,12,C.edge,700);const available=!state.reviveUsed&&!!state.checkpoint,ad=rewards.getState();
+   button('freeRestart','免费重开这一箱',20,H-186,W-40,48,{fill:C.orange});button('buy:revive',`10金币拆开上次封签 · 现有${save.coins}`,20,H-128,W-40,48,{disabled:!available||save.coins<10,font:12});button('ad:revive',ad.mode==='mock'?'模拟广告：拆签复活':'广告预留：尚未接入',20,H-70,W-40,48,{disabled:!available||!ad.available,font:13});
+  }else if(modal==='tools'){
+   text(`金币 ${save.coins} · 只从通关获得，没有充值`,20,130,12,C.edge,700);
+   button('buy:scan','6金币 · 封签预检（每箱一次）',20,152,W-40,44,{disabled:state.toolsUsed.scan||!canSeal(level,state)||save.coins<6,font:12});button('buy:locate','8金币 · 定位贴（每箱一次）',20,204,W-40,44,{disabled:state.toolsUsed.locate||state.status==='failed'||save.coins<8,font:12});
+   const ad=rewards.getState();button('ad:scan',ad.mode==='mock'?'模拟广告 · 领取封签预检':'广告预检尚未接入',20,268,W-40,44,{disabled:!ad.available||state.toolsUsed.scan||!canSeal(level,state),font:12});button('ad:locate',ad.mode==='mock'?'模拟广告 · 领取定位贴':'广告定位贴尚未接入',20,320,W-40,44,{disabled:!ad.available||state.toolsUsed.locate||state.status==='failed',font:12});
+   wrap('预检先看封签是否留有可行解；定位贴标出一件当前包裹的建议位置。道具不会直接过关。',20,H-72,W-40,12,C.edge,20,3);
+  }else if(modal==='rewardMock'){
+   wrap('开发用模拟广告：不播放视频，不联网。选择「模拟完成」后才会验证并发奖。',20,133,W-40,13,C.edge,21,3);
+   [['completed','模拟完成'],['cancelled','提前关闭，不领奖'],['unavailable','模拟无填充'],['error','模拟错误']].forEach(([status,label],i)=>button('mock:'+status,label,20,(layout.tight?180:204)+i*(layout.tight?47:49),W-40,44,{fill:i===0?C.orange:C.paper,font:13}));
+   button('freeRestart','取消模拟，免费重开',20,H-64,W-40,44,{font:12});
+  }else if(modal==='benefit'){
+   wrap(lastBenefit,20,149,W-40,16,C.ink,28,7);barcode(24,H-150,W-48,22);button('benefitContinue','回到工位',20,H-74,W-40,48,{fill:C.orange});
+  }else if(modal==='sidebarInfo'){
+   wrap('下次可从抖音首页侧边栏找到快递收纳站。点击下方按钮打开侧边栏，再点击游戏返回。',20,149,W-40,15,C.ink,25,5);text(sidebarState.enteredFromSidebar?'复访已确认':'尚未检测到本次从侧边栏返回',20,H-158,12,C.edge,700);button('sidebarNavigate',sidebarState.pending?'正在打开…':'打开侧边栏',20,H-128,W-40,48,{fill:C.orange,disabled:!sidebarState.available||sidebarState.pending});text('快捷入口，不发放或承诺奖励。',20,H-50,12,C.edge);
+  }
+ }
+ function draw(){
+  frame=null;if(destroyed)return;layout=dimensions();const dpr=size.dpr||1;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.width,size.height);warehouse();ctx.translate(layout.ox,layout.oy);targets=[];
+  if(layout.compact)drawCompact();else if(screen==='home')drawHome();else drawPlay();
+  if(modal&&!layout.compact)drawModal();
+  if(animation&&Date.now()<animation.until){const t=(Date.now()-animation.started)/(animation.until-animation.started);if(animation.kind==='seal'&&!modal){const by=layout.board?layout.board.y+layout.board.h/2:layout.H/2;ctx.globalAlpha=1-t;rect(layout.W/2-68,by-28,136,50,C.paper);text('封签 · 下一批',layout.W/2,by+3,17,C.red,800,'center');ctx.globalAlpha=1;}if(animation.kind==='unseal'&&!modal&&layout.board){const b=layout.board;ctx.save();ctx.translate(b.x+b.w/2+t*80,b.y+b.h/2-t*100);ctx.rotate(-t*.5);ctx.globalAlpha=1-t;rect(-b.w*.45,-6,b.w*.9,12,'#f4db9c');text('已拆签 · 重新留位',0,-18,15,C.paper,700,'center');ctx.restore();}if(animation.kind==='tool'&&modal==='benefit'){ctx.globalAlpha=(1-t)*.25;rect(8,8,layout.W-16,layout.H-16,C.blue);ctx.globalAlpha=1;}if(modal==='win'){ctx.globalAlpha=1-t;for(let i=0;i<8;i++)rect(layout.W/2+(i-4)*19,198-t*65+(i%3)*10,8,8,C.orange);ctx.globalAlpha=1;}requestDraw();}
+  if(toast&&Date.now()<toastUntil){const w=layout.W-24;rect(12,layout.H-110,w,42,'rgba(34,42,30,0.94)');text(toast,layout.W/2,layout.H-85,12,C.paper,700,'center');}
+  inputReady=true;if(Date.now()<toastUntil)requestDraw();
+ }
+ function openModal(next){toast='';toastUntil=0;if(modal)trail.push(modal);modal=next;if(next==='levels')levelsPage=Math.floor((level.id-1)/10);if(next==='help')tutorialPage=0;drag=null;invalidate();}
+ function closeModal(){if(modal==='rewardMock'){rewards.cancel();}if(modal==='briefing'){state.briefSeen=true;persist();}modal=trail.length?trail.pop():null;drag=null;invalidate();}
+ function boardPoint(p,anchor={x:0,y:0}){const b=layout&&layout.board;if(!b||p.x<b.x||p.y<b.y||p.x>=b.x+b.w||p.y>=b.y+b.h)return null;return {x:Math.floor((p.x-b.x)/b.cell)-anchor.x,y:Math.floor((p.y-b.y)/b.cell)-anchor.y};}
+ function cancelRewardRun(){runToken++;if(rewardPending){rewardPending=null;rewards.cancel();}}
+ function applyBenefit(kind,paid){const result=paid?purchaseBenefit(level,state,save,kind):useBenefit(level,state,kind);if(!result.ok){notify(result.reason);return false;}toast='';toastUntil=0;state=result.state;if(paid)save=result.save;lastBenefit=result.reason;persist();trail=[];modal=kind==='revive'?null:'benefit';animation={kind:kind==='revive'?'unseal':'tool',started:Date.now(),until:Date.now()+700};invalidate();return true;}
+ function requestBenefit(kind){
+  if(rewardPending)return;const eligibility=useBenefit(level,state,kind);if(!eligibility.ok){notify(eligibility.reason);return;}const capability=rewards.getState();if(!capability.available){notify('广告尚未接入，可以用金币或免费重开');return;}
+  const pending={kind,run:runToken,levelId:level.id,stage:state.stage,failed:state.status==='failed'};rewardPending=pending;if(capability.mode==='mock')openModal('rewardMock');
+  rewards.request({placement:'parcel_'+kind,context:{runId:runToken,levelId:level.id,stage:state.stage,failure:state.status==='failed'}}).then(result=>{
+   if(destroyed||rewardPending!==pending||runToken!==pending.run||level.id!==pending.levelId)return;rewardPending=null;
+   if(result.status==='completed'&&result.requestId&&!creditedRequests.has(result.requestId)&&state.stage===pending.stage&&(state.status==='failed')===pending.failed){creditedRequests.add(result.requestId);applyBenefit(kind,false);}
+   else{modal=state.status==='failed'?'failure':'tools';trail=[];notify(result.status==='completed'?'请求已失效，没有重复发奖':'本次未完成，不发奖励');invalidate();}
+  }).catch(()=>{if(!destroyed&&rewardPending===pending){rewardPending=null;modal=state.status==='failed'?'failure':'tools';trail=[];notify('模拟请求异常，没有发奖');invalidate();}});
+ }
+ function action(type,extra={}){
+  const beforeWin=campaignWin(level,state),result=applyCampaignAction(level,state,{type,pieceId:selected,...extra});if(!result.ok){notify(result.reason);platform.audio.play('error');return;}
+  state=result.state;animation={kind:type,started:Date.now(),until:Date.now()+(type==='seal'?650:240),pieceId:selected};persist();platform.audio.play(type==='place'?'place':type==='compress'?'squeeze':'tap');
+  if(type==='seal'&&state.status!=='failed'){modal=null;trail=[];selected=null;trayPage=Math.floor(level.pieces.findIndex(p=>currentBatch(level,state).includes(p.id))/3);}
+  if(state.status==='failed'){modal='failure';trail=[];}
+  if(!beforeWin&&campaignWin(level,state)){if(!save.completed.includes(level.id))save.completed.push(level.id);const award=awardClear(save,level.id);save=award.save;earned=award.earned;save.bestMoves[level.id]=Math.min(save.bestMoves[level.id]||Infinity,state.moves);persist();modal='win';trail=[];platform.audio.play('win');}invalidate();
+ }
+ function switchLevel(id){toast='';toastUntil=0;cancelRewardRun();level=getLevel(id);state=createCampaignState(level);selected=null;modal=null;trail=[];drag=null;trayPage=0;screen='play';modal='briefing';persist();invalidate();}
+ function activate(hit){
+  if(!hit||hit.disabled)return;const id=hit.id;
+  if(id==='piece'){selected=hit.pieceId;platform.audio.play('tap');}
+  else if(id==='play'){screen='play';modal=state.status==='failed'?'failure':!state.briefSeen?'briefing':null;trail=[];}
+  else if(id==='home'){toast='';toastUntil=0;cancelRewardRun();screen='home';modal=null;trail=[];persist();}
+  else if(id==='sound'){save.sound=!save.sound;platform.audio.setMuted(!save.sound);persist();platform.audio.play('tap');}
+  else if(['menu','help','levels','hint','restart','settings','sidebarInfo','manifest','tools','rack'].includes(id))openModal(id);
+  else if(id==='close')closeModal();
+  else if(id.startsWith('rackPiece:')){selected=id.split(':')[1];modal=null;trail=[];platform.audio.play('tap');}
+  else if(id==='briefStart'){state.briefSeen=true;modal=null;trail=[];persist();}
+  else if(id==='levelsPrev')levelsPage=Math.max(0,levelsPage-1);
+  else if(id==='levelsNext')levelsPage=Math.min(4,levelsPage+1);
+  else if(id==='showFailure'){modal='failure';trail=[];}
+  else if(id==='benefitContinue'){modal=null;trail=[];}
+  else if(id.startsWith('buy:'))applyBenefit(id.split(':')[1],true);
+  else if(id.startsWith('ad:'))requestBenefit(id.split(':')[1]);
+  else if(id.startsWith('mock:')&&typeof rewards.completeMock==='function')rewards.completeMock(id.split(':')[1]);
+  else if(id==='tutorialPrev')tutorialPage=Math.max(0,tutorialPage-1);
+  else if(id==='tutorialNext'){if(tutorialPage<4)tutorialPage++;else{state.briefSeen=true;persist();screen='play';modal=null;trail=[];}}
+  else if(id==='trayPrev')trayPage=Math.max(0,trayPage-1);
+  else if(id==='trayNext')trayPage=Math.min(Math.ceil(level.pieces.length/3)-1,trayPage+1);
+  else if(id.startsWith('level:'))switchLevel(Number(id.split(':')[1]));
+  else if(id==='confirmRestart'||id==='freeRestart'){toast='';toastUntil=0;cancelRewardRun();state=createCampaignState(level);selected=null;modal=null;trail=[];screen='play';trayPage=0;persist();}
+  else if(['rotate','compress','remove','undo','seal'].includes(id))action(id);
+  else if(id==='showWin'){modal='win';trail=[];}
+  else if(id==='next'){if(level.id===LEVELS.length){modal='levels';levelsPage=4;trail=[];}else switchLevel(level.id+1);}
+  else if(id==='sidebarNavigate'&&sidebar&&sidebarState.available&&!sidebarState.pending){sidebar.navigate().then(ok=>{if(!ok&&!destroyed)notify('暂时无法打开侧边栏');}).catch(()=>{if(!destroyed)notify('暂时无法打开侧边栏');});}
+  invalidate();
+ }
+ function pointer(event){
+  if(destroyed||paused)return;const p=logical(event);
+  if(event.type==='down'){
+   if(drag||!inputReady)return;const hit=[...targets].reverse().find(h=>p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h);
+   if(hit){if(hit.id==='piece'&&!hit.disabled){selected=hit.pieceId;drag={id:event.id,start:p,current:p,moved:false,pieceId:selected,anchor:{x:0,y:0},hit};requestDraw();}else {drag={id:event.id,start:p,current:p,moved:false,hit};requestDraw();}return;}
+   if(modal||screen!=='play'||layout.compact)return;const at=boardPoint(p);if(at){const id=occupiedCells(level,state).get(`${at.x},${at.y}`);if(selected&&selected!==id&&canPlace(level,state,selected,at.x,at.y).ok)drag={id:event.id,start:p,current:p,moved:false,at};else if(id){selected=id;const pos=state.placements[id];drag={id:event.id,start:p,current:p,moved:false,pieceId:id,anchor:{x:at.x-pos.x,y:at.y-pos.y}};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,at};}
+  }else if(drag&&event.id===drag.id){
+   if(event.type==='cancel'){drag=null;requestDraw();return;}if(event.type==='move'){drag.current=p;const distance=Math.hypot(p.x-drag.start.x,p.y-drag.start.y);if(drag.pieceId&&distance>6)drag.moved=true;else if(!drag.pieceId&&(distance>10||(drag.hit&&(p.x<drag.hit.x||p.x>drag.hit.x+drag.hit.w||p.y<drag.hit.y||p.y>drag.hit.y+drag.hit.h))))drag.cancelled=true;requestDraw();}
+   else if(event.type==='up'){const ended=drag;drag=null;if(ended.moved&&ended.pieceId){const at=boardPoint(p,ended.anchor);if(at)action('place',at);else notify('未放下，包裹仍在原位');}else if(ended.hit&&!ended.cancelled){const hit=ended.hit;if(p.x>=hit.x&&p.x<=hit.x+hit.w&&p.y>=hit.y&&p.y<=hit.y+hit.h)activate(hit);}else if(ended.at&&!ended.cancelled&&Math.hypot(p.x-ended.start.x,p.y-ended.start.y)<10){if(selected)action('place',ended.at);else notify('先选一件包裹');}requestDraw();}
+  }
+ }
+ disposers.push(platform.onPointer(pointer),platform.onResize(()=>{size=platform.getSize();drag=null;invalidate();}),platform.onPause(()=>{paused=true;drag=null;inputReady=false;targets=[];if(frame!==null){platform.cancelFrame(frame);frame=null;}persist();}),platform.onResume(()=>{paused=false;invalidate();}));
+ if(loaded.status==='unavailable')notify('存档暂时不可用，仍可游玩');requestDraw();
+ return {
+  getSnapshot(){const l=layout||dimensions();return JSON.parse(JSON.stringify({screen,modal,tutorialPage,trayPage,levelsPage,coins:save.coins,earned,reward:rewards.getState(),rewardPending:rewardPending?{kind:rewardPending.kind,run:rewardPending.run}:null,levelId:level.id,selected,state,completed:save.completed,sound:save.sound,saveOK,paused,destroyed,sidebar:sidebarState,layout:l,hitTargets:targets.map(t=>({...t,screenX:t.x+l.ox,screenY:t.y+l.oy,screenWidth:t.w,screenHeight:t.h}))}));},
+  destroy(){if(destroyed)return;cancelRewardRun();persist();destroyed=true;disposers.forEach(fn=>{if(fn)fn();});if(frame!==null)platform.cancelFrame(frame);}
+ };
+}
+
+// platforms/browser-adapter.js
+// DOM access is isolated to this browser adapter. Not shipped in the tt build.
+function createBrowserPlatform(canvas, host = window, audioPaths = {}) {
+  const listeners = { pointer: new Set(), resize: new Set(), pause: new Set(), resume: new Set() };
+  const removers = [];
+  const rewards=createMockRewards(typeof host.setTimeout==='function'?{timers:{setTimeout:(fn,ms)=>host.setTimeout(fn,ms),clearTimeout:id=>host.clearTimeout(id)}}:{});
+  const emit = (name, value) => listeners[name].forEach(fn => fn(value));
+  const subscribe = name => fn => { listeners[name].add(fn); return () => listeners[name].delete(fn); };
+  const listen = (target, name, fn) => { target.addEventListener(name, fn); removers.push(() => target.removeEventListener(name, fn)); };
+  let size;const activePointers=new Map();
+  function cancelPointer(id){const p=activePointers.get(id);if(p){activePointers.delete(id);emit('pointer',{...p,type:'cancel'});}}
+  function cancelPointers(){[...activePointers.keys()].forEach(cancelPointer);}
+  function resize() {
+    cancelPointers();
+    const rect = canvas.getBoundingClientRect();
+    const style = typeof host.getComputedStyle === 'function' ? host.getComputedStyle(host.document.documentElement) : null;
+    const inset = name => style ? Math.max(0, parseFloat(style.getPropertyValue('--safe-' + name)) || 0) : 0;
+    size = { width: rect.width, height: rect.height, dpr: Math.min(host.devicePixelRatio || 1, 3), safeTop: inset('top'), safeBottom: inset('bottom'), safeLeft: inset('left'), safeRight: inset('right') };
+    canvas.width = Math.round(size.width * size.dpr);
+    canvas.height = Math.round(size.height * size.dpr);
+    emit('resize', { ...size });
+  }
+  resize();
+  listen(host, 'resize', resize);
+  for (const [event, type] of [['pointerdown','down'],['pointermove','move'],['pointerup','up'],['pointercancel','cancel']]) {
+    listen(canvas, event, e => {
+      if (type === 'down') {try {canvas.setPointerCapture?.(e.pointerId);}catch {_captureUnavailable();}}
+      const rect = canvas.getBoundingClientRect();
+      const pointer={type,x:(e.clientX-rect.left)*size.width/rect.width,y:(e.clientY-rect.top)*size.height/rect.height,id:e.pointerId};if(type==='down'||activePointers.has(e.pointerId))activePointers.set(e.pointerId,pointer);emit('pointer',pointer);if(type==='up'||type==='cancel')activePointers.delete(e.pointerId);
+    });
+  }
+  function _captureUnavailable(){/* Pointer input still works when capture is unsupported. */}
+  listen(canvas,'lostpointercapture',e=>cancelPointer(e.pointerId));
+  listen(host,'blur',cancelPointers);
+  let muted = false;
+  const sounds = new Map();
+  const audio = {
+    play(name) {
+      if (muted || !audioPaths[name]) return;
+      try {
+        let sound = sounds.get(name);
+        if (!sound) { sound = new host.Audio(audioPaths[name]); sounds.set(name, sound); }
+        sound.currentTime = 0;
+        const pending = sound.play();
+        if (pending?.catch) pending.catch(() => {});
+      } catch { /* Audio failure must not block play. */ }
+    },
+    setMuted(value) { muted = Boolean(value); if (muted) sounds.forEach(sound => sound.pause()); }
+  };
+  listen(host, 'pagehide', () => { cancelPointers(); sounds.forEach(sound => sound.pause()); emit('pause'); });
+  listen(host, 'pageshow', event => { if (event.persisted) { resize(); emit('resume'); } });
+  listen(host.document, 'visibilitychange', () => {
+    if (host.document.hidden) { cancelPointers(); sounds.forEach(sound => sound.pause()); emit('pause'); }
+    else { resize(); emit('resume'); }
+  });
+  return {
+    canvas, rewards, getSize: () => ({ ...size }),
+    onPointer: subscribe('pointer'), onResize: subscribe('resize'), onPause: subscribe('pause'), onResume: subscribe('resume'),
+    requestFrame: fn => host.requestAnimationFrame(fn), cancelFrame: id => host.cancelAnimationFrame(id),
+    storage: { getItem: key => host.localStorage.getItem(key), setItem: (key, value) => host.localStorage.setItem(key, value) },
+    audio,
+    destroy() { cancelPointers();rewards.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => sound.pause()); Object.values(listeners).forEach(set => set.clear()); }
+  };
+}
+
+const canvas=document.getElementById('game');const platform=createBrowserPlatform(canvas,window,{"tap":"data:audio/wav;base64,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","place":"data:audio/wav;base64,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","squeeze":"data:audio/wav;base64,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","error":"data:audio/wav;base64,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aQBvAHUAegCAAIQAiQCNAJEAlQCYAJsAngChAKMApQCmAKcAqACoAKkAqQCoAKcApgClAKMAoQCfAJ0AmgCXAJQAkACMAIgAhACAAHsAdgByAGwAZwBiAFwAVwBRAEsARQA/ADkAMwAtACcAIQAbABUADwAIAAIA/v/4//L/7P/n/+H/3P/X/9H/zP/I/8P/v/+6/7b/sv+u/6v/p/+k/6H/n/+c/5r/mP+W/5T/k/+S/5H/kP+P/4//j/+P/4//kP+R/5H/k/+U/5X/l/+Z/5v/nf+g/6L/pf+o/6r/rv+x/7T/t/+7/77/wv/G/8r/zf/R/9X/2f/d/+H/5f/p/+3/8f/1//n//f8AAAMABwALAA4AEgAVABgAHAAfACIAJQAoACoALQAvADIANAA2ADgAOgA7AD0APgBAAEEAQgBDAEMARABEAEQARQBFAEUARABEAEMAQwBCAEEAQAA/AD4APQA7ADoAOAA3ADUAMwAxAC8ALQArACkAJwAlACMAIAAeABwAGgAXABUAEwAQAA4ADAAJAAcABQADAAEA///9//v/+f/3//X/9P/y//D/7v/t/+v/6v/o/+f/5v/l/+T/4//i/+H/4P/f/9//3v/e/93/3f/d/93/3f/d/93/3f/d/93/3v/e/9//3//g/+D/4f/i/+L/4//k/+X/5v/n/+j/6f/q/+v/7P/t/+7/7//w//H/8//0//X/9v/3//j/+f/6//v//f/+////AAAAAAAAAQACAAMABAAFAAUABgAHAAgACAAJAAkACgAKAAsACwALAAwADAAMAAwADQANAA0ADQANAA0ADQANAA0ADQANAA0ADAAMAAwADAALAAsACwALAAoACgAKAAkACQAIAAgACAAHAAcABgAGAAYABQAFAAUABAAEAAMAAwADAAIAAgACAAEAAQABAAAAAAAAAAAAAAAAAAAAAAAAAP/////////////////////+//7//v/+//7//v/+//7//v/+//7//v/+//7//v//////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","win":"data:audio/wav;base64,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w/+3/7D/rv+x/7n/xf/V/+j//P8PACIAMwBBAEoATwBPAEkAQAAyACEADgD7/+j/1//I/7z/tf+z/7b/vf/I/9f/6f/7/w0AHwAvADwARQBKAEoARQA8AC8AIAAOAP3/6//a/8z/wf+6/7j/uv/B/8v/2f/p//v/CwAcACsAOABAAEUARQBBADkALQAfAA4A/v/t/97/0P/G/7//vf+//8X/zv/b/+r/+v8KABoAKAAzADwAQABAAD0ANQArAB0ADgD//+//4f/U/8r/xP/C/8P/yP/R/93/6//6/wgAFwAkAC8ANwA7ADwAOQAyACgAHAAOAAAA8f/k/9j/z//J/8b/x//M/9T/3//r//n/BwAUACEAKwAzADcAOAA1AC8AJgAbAA4AAADz/+b/2//T/83/yv/L/8//1//g/+z/+f8FABIAHgAnAC8AMwA0ADEALAAkABkADQABAPX/6f/f/9f/0f/P/8//0//Z/+L/7f/5/wQAEAAbACQAKwAvAC8ALQApACEAGAANAAEA9v/r/+L/2v/V/9P/0//W/9z/5P/u//n/AwAOABgAIQAnACsALAAqACYAHwAWAAwAAgD4/+7/5f/e/9n/1v/X/9r/3//m/+//+f8CAAwAFgAdACMAJwAoACYAIwAdABUADAACAPn/8P/o/+H/3P/a/9r/3f/h/+j/8P/5/wIACwATABoAIAAjACQAIwAgABoAEwALAAIA+v/y/+r/5P/g/97/3v/g/+T/6v/x//n/AQAJABEAGAAdACAAIQAgAB0AGAASAAsAAwD7//T/7f/n/+P/4f/h/+P/5v/s//L/+v8AAAgADwAVABoAHQAeAB0AGgAWABAACgADAPz/9f/v/+r/5v/k/+T/5v/p/+3/8//6/wAABwANABMAFwAaABsAGgAYABQADwAJAAMA/f/3//H/7P/p/+f/5//o/+v/7//0//r/AAAGAAsAEAAUABcAGAAXABUAEgAOAAgAAwD+//j/8//v/+z/6v/q/+v/7f/x//X/+/8AAAUACgAOABIAFAAVABUAEwAQAAwACAADAP7/+f/1//H/7v/t/+z/7f/v//L/9v/7/wAABAAIAAwADwARABIAEgARAA4ACwAHAAIA///6//b/8//x/+//7//w//H/9P/4//v/AAADAAcACgANAA8AEAAQAA8ADQAKAAYAAgD///v/+P/1//P/8v/x//L/8//2//n//P8AAAIABgAJAAsADQAOAA4ADQALAAgABQACAAAA/P/5//f/9f/0//P/9P/1//f/+v/8/wAAAgAFAAcACQALAAwADAALAAkABwAFAAIAAAD9//v/+P/3//b/9f/2//f/+P/6//3/AAABAAQABgAIAAkACgAKAAkACAAGAAQAAgAAAP7//P/6//j/9//3//f/+P/6//v//f8AAAEAAwAFAAYABwAIAAgABwAGAAUAAwABAAAA/v/9//v/+v/5//n/+f/6//v//P/+/wAAAAACAAQABQAGAAYABgAGAAUABAADAAEAAAD///3//P/7//v/+v/6//v//P/9//7/AAAAAAIAAwAEAAUABQAFAAUABAADAAIAAQAAAP///v/9//z//P/8//z//P/9//7///8AAAAAAQACAAMAAwAEAAQAAwADAAIAAgABAAAAAAD///7//f/9//3//f/9//7//v///wAAAAABAAEAAgACAAMAAwACAAIAAgABAAAAAAAAAP/////+//7//v/+//7//v//////AAAAAAAAAQABAAEAAgACAAIAAQABAAEAAAAAAAAAAAD/////////////////////AAAAAAAAAAAAAAEAAQABAAEAAQABAAAAAAAAAAAAAAAAAAAAAAD///////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="});const game=startGame(platform);window.__parcelGame=Object.freeze({getSnapshot:game.getSnapshot});window.addEventListener('pagehide',event=>{if(!event.persisted){game.destroy();platform.destroy();}});
+})();</script></body></html>

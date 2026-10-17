@@ -1809,7 +1809,7 @@ function startGame(platform) {
  function text(value,x,y,font=14,color=C.ink,weight=400,align='left'){ctx.font=`${weight} ${font}px ${FONT}`;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillStyle=color;ctx.fillText(String(value),x,y);}
  function wrap(value,x,y,width,font=14,color=C.ink,lineHeight=22,maxLines=5){let current='',row=0;ctx.font=`400 ${font}px ${FONT}`;for(const ch of value){if(ctx.measureText(current+ch).width>width&&current){text(current,x,y+row*lineHeight,font,color);row++;current=ch;if(row>=maxLines)return;}else current+=ch;}if(current)text(current,x,y+row*lineHeight,font,color);}
  function barcode(x,y,w,h,color=C.ink){let offset=0;for(let i=0;offset<w;i++){const width=i%3===0?3:1;rect(x+offset,y,Math.min(width,w-offset),h,color);offset+=width+(i%2===0?2:3);}}
- function button(id,label,x,y,w,h,options={}){const disabled=!!options.disabled;ctx.globalAlpha=disabled ? .40 : 1;rect(x+1,y+3,w,h,C.ink);rrect(x,y,w,h,3,options.fill||C.paper,options.border||C.edge);text(label,x+w/2,y+h/2+5,options.font||14,options.color||C.ink,700,'center');if(options.tag)rect(x+6,y+6,4,h-12,C.orange);ctx.globalAlpha=1;targets.push({id,label,x,y,w,h,disabled,...options.data});}
+ function button(id,label,x,y,w,h,options={}){const disabled=!!options.disabled;ctx.globalAlpha=disabled ? .40 : 1;rect(x+1,y+3,w,h,C.ink);rrect(x,y,w,h,3,options.fill||C.paper,options.border||C.edge);text(label,x+w/2,y+h/2+5,options.font||14,options.color||C.ink,700,'center');if(options.tag)rect(x+6,y+6,4,h-12,C.orange);if(drag&&drag.hit&&drag.hit.id===id&&!drag.cancelled&&!disabled){ctx.globalAlpha=.18;rect(x+2,y+2,w-4,h-4,'#ffffff');}ctx.globalAlpha=1;targets.push({id,label,x,y,w,h,disabled,...options.data});}
  function dimensions(){
   size=platform.getSize();const safe={top:Math.max(0,Number(size.safeTop)||0),bottom:Math.max(0,Number(size.safeBottom)||0),left:Math.max(0,Number(size.safeLeft)||0),right:Math.max(0,Number(size.safeRight)||0)};
   const availableWidth=Math.max(1,size.width-safe.left-safe.right),W=Math.min(480,availableWidth),H=Math.max(1,size.height-safe.top-safe.bottom);
@@ -2024,7 +2024,7 @@ function startGame(platform) {
   if(destroyed||paused)return;const p=logical(event);
   if(event.type==='down'){
    if(drag||!inputReady)return;const hit=[...targets].reverse().find(h=>p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h);
-   if(hit){if(hit.id==='piece'&&!hit.disabled){selected=hit.pieceId;drag={id:event.id,start:p,current:p,moved:false,pieceId:selected,anchor:{x:0,y:0},hit};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,hit};return;}
+   if(hit){if(hit.id==='piece'&&!hit.disabled){selected=hit.pieceId;drag={id:event.id,start:p,current:p,moved:false,pieceId:selected,anchor:{x:0,y:0},hit};requestDraw();}else {drag={id:event.id,start:p,current:p,moved:false,hit};requestDraw();}return;}
    if(modal||screen!=='play'||layout.compact)return;const at=boardPoint(p);if(at){const id=occupiedCells(level,state).get(`${at.x},${at.y}`);if(selected&&selected!==id&&canPlace(level,state,selected,at.x,at.y).ok)drag={id:event.id,start:p,current:p,moved:false,at};else if(id){selected=id;const pos=state.placements[id];drag={id:event.id,start:p,current:p,moved:false,pieceId:id,anchor:{x:at.x-pos.x,y:at.y-pos.y}};requestDraw();}else drag={id:event.id,start:p,current:p,moved:false,at};}
   }else if(drag&&event.id===drag.id){
    if(event.type==='cancel'){drag=null;requestDraw();return;}if(event.type==='move'){drag.current=p;const distance=Math.hypot(p.x-drag.start.x,p.y-drag.start.y);if(drag.pieceId&&distance>6)drag.moved=true;else if(!drag.pieceId&&(distance>10||(drag.hit&&(p.x<drag.hit.x||p.x>drag.hit.x+drag.hit.w||p.y<drag.hit.y||p.y>drag.hit.y+drag.hit.h))))drag.cancelled=true;requestDraw();}
@@ -2147,10 +2147,11 @@ function createTTPlatform(api, scheduler, audioPaths = {}) {
       touches.forEach(touch => emit('pointer', { type, x: touch.clientX, y: touch.clientY, id: touch.identifier }));
     });
   }
-  let muted = false;
-  const stopAudio = () => sounds.forEach(sound => sound.pause());
-  bind('onHide', 'offHide', () => { stopAudio(); emit('pause'); });
-  bind('onShow', 'offShow', () => { resize(); emit('resume'); });
+  let muted = false, audioPaused = false, audioDestroyed = false;
+  const safeAudioCall = (sound, method, ...args) => { try { if (typeof sound[method] === 'function') sound[method](...args); } catch (_) { /* A broken optional audio method must not interrupt game lifecycle. */ } };
+  const stopAudio = () => sounds.forEach(sound => safeAudioCall(sound, 'pause'));
+  bind('onHide', 'offHide', () => { audioPaused = true; stopAudio(); emit('pause'); });
+  bind('onShow', 'offShow', () => { audioPaused = false; resize(); emit('resume'); });
   // Touch coordinates stay logical pixels; resize invalidates the game gesture.
   bind('onWindowResize', 'offWindowResize', resize);
   return {
@@ -2163,16 +2164,16 @@ function createTTPlatform(api, scheduler, audioPaths = {}) {
     },
     audio: {
       play(name) {
-        if (muted || !audioPaths[name] || typeof api.createInnerAudioContext !== 'function') return;
+        if (muted || audioPaused || audioDestroyed || !audioPaths[name] || typeof api.createInnerAudioContext !== 'function') return;
         try {
           let sound = sounds.get(name);
           if (!sound) { sound = api.createInnerAudioContext(); sound.src = audioPaths[name]; if(typeof sound.onError==='function')sound.onError(() => {}); sounds.set(name, sound); }
-          sound.seek(0); sound.play();
+          safeAudioCall(sound, 'seek', 0); safeAudioCall(sound, 'play');
         } catch (_error) { /* Audio failure must not block play. */ }
       },
       setMuted(value) { muted = Boolean(value); if (muted) stopAudio(); }
     },
-    destroy() { rewards.destroy(); sidebar.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => sound.destroy()); Object.values(listeners).forEach(set => set.clear()); }
+    destroy() { if (audioDestroyed) return; audioDestroyed = true; stopAudio(); rewards.destroy(); sidebar.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => safeAudioCall(sound, 'destroy')); sounds.clear(); Object.values(listeners).forEach(set => set.clear()); }
   };
 }
 

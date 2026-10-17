@@ -44,10 +44,11 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
       touches.forEach(touch => emit('pointer', { type, x: touch.clientX, y: touch.clientY, id: touch.identifier }));
     });
   }
-  let muted = false;
-  const stopAudio = () => sounds.forEach(sound => sound.pause());
-  bind('onHide', 'offHide', () => { stopAudio(); emit('pause'); });
-  bind('onShow', 'offShow', () => { resize(); emit('resume'); });
+  let muted = false, audioPaused = false, audioDestroyed = false;
+  const safeAudioCall = (sound, method, ...args) => { try { if (typeof sound[method] === 'function') sound[method](...args); } catch (_) { /* A broken optional audio method must not interrupt game lifecycle. */ } };
+  const stopAudio = () => sounds.forEach(sound => safeAudioCall(sound, 'pause'));
+  bind('onHide', 'offHide', () => { audioPaused = true; stopAudio(); emit('pause'); });
+  bind('onShow', 'offShow', () => { audioPaused = false; resize(); emit('resume'); });
   // Touch coordinates stay logical pixels; resize invalidates the game gesture.
   bind('onWindowResize', 'offWindowResize', resize);
   return {
@@ -60,15 +61,15 @@ export function createTTPlatform(api, scheduler, audioPaths = {}) {
     },
     audio: {
       play(name) {
-        if (muted || !audioPaths[name] || typeof api.createInnerAudioContext !== 'function') return;
+        if (muted || audioPaused || audioDestroyed || !audioPaths[name] || typeof api.createInnerAudioContext !== 'function') return;
         try {
           let sound = sounds.get(name);
           if (!sound) { sound = api.createInnerAudioContext(); sound.src = audioPaths[name]; if(typeof sound.onError==='function')sound.onError(() => {}); sounds.set(name, sound); }
-          sound.seek(0); sound.play();
+          safeAudioCall(sound, 'seek', 0); safeAudioCall(sound, 'play');
         } catch (_error) { /* Audio failure must not block play. */ }
       },
       setMuted(value) { muted = Boolean(value); if (muted) stopAudio(); }
     },
-    destroy() { rewards.destroy(); sidebar.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => sound.destroy()); Object.values(listeners).forEach(set => set.clear()); }
+    destroy() { if (audioDestroyed) return; audioDestroyed = true; stopAudio(); rewards.destroy(); sidebar.destroy(); removers.forEach(fn => fn()); sounds.forEach(sound => safeAudioCall(sound, 'destroy')); sounds.clear(); Object.values(listeners).forEach(set => set.clear()); }
   };
 }
